@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  主题图标（Android 13+ 的「主题化图标」）用的单色版本。
+
+  系统只取这份图的透明度再整体染色，所以这里不能画白卡片 —— 卡片会把里面的
+  条和三角糊成一整块。只留三条课表条和播放三角，轮廓反而更清楚。
+  位置跟彩色版的前景一致，切换主题时不会跳。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M37.25,40 h11 a3.25,3.25 0 0 1 0,6.5 h-11 a3.25,3.25 0 0 1 0,-6.5 z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M37.25,51 h11 a3.25,3.25 0 0 1 0,6.5 h-11 a3.25,3.25 0 0 1 0,-6.5 z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M37.25,62 h11 a3.25,3.25 0 0 1 0,6.5 h-11 a3.25,3.25 0 0 1 0,-6.5 z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M57,46.822 L57,61.178 A2.5,2.5 0 0 0 60.940,63.219 L71.107,56.042 A2.5,2.5 0 0 0 71.107,51.958 L60.940,44.781 A2.5,2.5 0 0 0 57,46.822 Z" />
+</vector>

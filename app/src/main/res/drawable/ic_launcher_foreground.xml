@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tools 图标前景：白色圆卡片上，左边三条课表条（课表），右边一个播放三角（播放器）。
+
+  自适应图标的前景会被裁：只有中间 72x72 一定留得住，所以卡片收在 28..80、
+  内容收在 34..74 —— 卡片和边缘之间留出的一圈正好露出底色渐变。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 卡片：28,28 到 80,80，圆角 12 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,28 h28 a12,12 0 0 1 12,12 v28 a12,12 0 0 1 -12,12 h-28 a12,12 0 0 1 -12,-12 v-28 a12,12 0 0 1 12,-12 z" />
+
+    <!-- 三条课表条：34..51.5，高 6.5，行距 11 -->
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M37.25,40 h11 a3.25,3.25 0 0 1 0,6.5 h-11 a3.25,3.25 0 0 1 0,-6.5 z" />
+    <path
+        android:fillColor="#42A5F5"
+        android:pathData="M37.25,51 h11 a3.25,3.25 0 0 1 0,6.5 h-11 a3.25,3.25 0 0 1 0,-6.5 z" />
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M37.25,62 h11 a3.25,3.25 0 0 1 0,6.5 h-11 a3.25,3.25 0 0 1 0,-6.5 z" />
+
+    <!-- 播放三角：左边缘 57，顶点 74，上下 42..66，三个角磨圆。
+         路径是逆时针绕的（A→下→顶点），所以圆角的 sweep 必须是 0，写 1 会往内凹成豁口。 -->
+    <path
+        android:fillColor="#FF6B35"
+        android:pathData="M57,46.822 L57,61.178 A2.5,2.5 0 0 0 60.940,63.219 L71.107,56.042 A2.5,2.5 0 0 0 71.107,51.958 L60.940,44.781 A2.5,2.5 0 0 0 57,46.822 Z" />
+</vector>

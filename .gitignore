@@ -1,0 +1,21 @@
+# 便携工具链（JDK / Gradle 压缩包与解压结果），不入库
+.toolchain/
+
+# Android 构建产物
+*.iml
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.hprof
+
+# 其它
+*.log
+.DS_Store
