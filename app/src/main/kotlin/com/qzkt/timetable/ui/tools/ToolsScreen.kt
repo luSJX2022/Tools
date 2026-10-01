@@ -1,0 +1,130 @@
+package com.qzkt.timetable.ui.tools
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.qzkt.timetable.data.TimetableSnapshot
+import com.qzkt.timetable.ui.grid.computeCurrentWeek
+import java.time.LocalDate
+
+/**
+ * 工具页：整个 App 的出发点。
+ *
+ * 课表和播放器原先各占一个底部页签，现在收进这里变成两个入口 ——
+ * 底部页签只剩「工具」和「设置」，打开 App 先看到工具列表，再进具体功能。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ToolsScreen(
+    snapshot: TimetableSnapshot,
+    animeFavoriteCount: Int = 0,
+    onOpenTimetable: () -> Unit,
+    onOpenResolve: () -> Unit = {},
+    onOpenAnime: () -> Unit = {},
+) {
+    val today = remember { LocalDate.now() }
+    val currentWeek = remember(snapshot, today) { computeCurrentWeek(snapshot, today) }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("工具") }) }) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ToolEntry(
+                icon = Icons.Default.CalendarMonth,
+                title = "课表",
+                subtitle = if (snapshot.firstMonday.isBlank()) {
+                    "还没设置开学日期，点进去补上"
+                } else {
+                    val weeks = if (snapshot.weekCount > 0) " · 共 ${snapshot.weekCount} 周" else ""
+                    "第 $currentWeek 周$weeks"
+                },
+                onClick = onOpenTimetable,
+            )
+            ToolEntry(
+                icon = Icons.Default.Link,
+                title = "链接解析",
+                subtitle = "B站 / 抖音分享链接，解析后直接播放",
+                onClick = onOpenResolve,
+            )
+            ToolEntry(
+                icon = Icons.Default.Movie,
+                title = "影视",
+                subtitle = if (animeFavoriteCount > 0) {
+                    "收藏 $animeFavoriteCount 部 · 电影、剧集、动漫都能搜能看"
+                } else {
+                    "电影、剧集、动漫，搜索、收藏和在线播放"
+                },
+                onClick = onOpenAnime,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ToolEntry(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(30.dp),
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

@@ -5,6 +5,7 @@ import android.content.Context
 import com.qzkt.timetable.data.SettingsStore
 import com.qzkt.timetable.data.TimetableRepository
 import com.qzkt.timetable.data.TimetableStore
+import com.qzkt.timetable.data.anime.AnimeStore
 import com.qzkt.timetable.jw.JwAdapter
 import com.qzkt.timetable.jw.qz.SmartQzAdapter
 import com.qzkt.timetable.sync.ChangeNotifier
@@ -23,6 +24,8 @@ class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
 
     val settingsStore = SettingsStore(appContext)
+
+    val animeStore = AnimeStore(appContext)
 
     val repository = TimetableRepository(
         TimetableStore(File(appContext.filesDir, "timetable")),

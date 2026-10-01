@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
+    implementation(libs.coil.compose)
     debugImplementation(libs.compose.ui.tooling)
 
     implementation(libs.androidx.glance.appwidget)
@@ -78,6 +79,8 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.session)
+    // 取流走 OkHttp：连接池 + 断线自动重连，比默认的 HttpURLConnection 稳
+    implementation(libs.media3.datasource.okhttp)
     // 流媒体：HLS(.m3u8) / DASH(.mpd)；HTTP 直链本来就支持。
     // 加上这两个模块后，DefaultMediaSourceFactory 会按地址后缀自动选解析器。
     implementation(libs.media3.hls)

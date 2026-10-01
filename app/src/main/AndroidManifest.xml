@@ -29,15 +29,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <!-- 从文件管理器「打开方式」直接播：Tools 作为媒体播放器出现在系统里 -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:mimeType="video/*" />
-                <data android:mimeType="audio/*" />
-            </intent-filter>
         </activity>
 
         <!-- 后台播放：会话服务，锁屏/切后台也能放，通知栏和蓝牙耳机都能控制 -->

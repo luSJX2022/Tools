@@ -2,18 +2,23 @@ package com.qzkt.timetable
 
 import android.Manifest
 import android.os.Build
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -21,14 +26,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qzkt.timetable.ui.MainViewModel
 import com.qzkt.timetable.ui.MainViewModelFactory
 import com.qzkt.timetable.ui.QzktApp
+import com.qzkt.timetable.ui.anime.AnimeViewModel
+import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
+import com.qzkt.timetable.ui.common.SplashOverlay
 import com.qzkt.timetable.ui.theme.QzktTheme
 import com.qzkt.timetable.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-
-    /** 外部传进来要播放的媒体（content:// 或 file://）。 */
-    private val mediaUri = mutableStateOf<android.net.Uri?>(null)
 
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 拒绝就静默降级 */ }
@@ -43,29 +48,29 @@ class MainActivity : ComponentActivity() {
         }
 
         val container = appContainer
-        // 从文件管理器"打开方式"进来时带着媒体地址
-        mediaUri.value = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data
 
         setContent {
             val viewModel: MainViewModel = viewModel(factory = MainViewModelFactory(container))
+            val animeViewModel: AnimeViewModel = viewModel(factory = AnimeViewModelFactory(container))
             val settings by viewModel.settings.collectAsStateWithLifecycle()
+            // 开屏动画：每次正常启动来一段，旋转重建后不重播
+            var showSplash by rememberSaveable { mutableStateOf(true) }
 
             val themeMode = remember(settings.themeMode) {
                 runCatching { ThemeMode.valueOf(settings.themeMode) }.getOrDefault(ThemeMode.SYSTEM)
             }
 
             QzktTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    QzktApp(viewModel, mediaUri.value)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        QzktApp(viewModel, animeViewModel)
+                    }
+                    AnimatedVisibility(visible = showSplash, exit = fadeOut(animationSpec = tween(350))) {
+                        SplashOverlay(onFinished = { showSplash = false })
+                    }
                 }
             }
         }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        mediaUri.value = intent.takeIf { it.action == Intent.ACTION_VIEW }?.data
     }
 
     override fun onResume() {

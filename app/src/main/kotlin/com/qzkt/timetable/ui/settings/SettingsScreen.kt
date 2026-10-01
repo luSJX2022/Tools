@@ -1,77 +1,66 @@
 package com.qzkt.timetable.ui.settings
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.imageLoader
 import com.qzkt.timetable.data.AppSettings
-import com.qzkt.timetable.data.TimetableSnapshot
-import com.qzkt.timetable.model.TimeSlot
-import com.qzkt.timetable.sync.SyncScheduler
-import com.qzkt.timetable.ui.common.FirstMondayPickerDialog
-
-private val INTERVAL_OPTIONS = listOf(
-    15 to "15 分钟",
-    30 to "30 分钟",
-    60 to "1 小时",
-    180 to "3 小时",
-    360 to "6 小时",
-    720 to "12 小时",
-    1440 to "24 小时",
-)
-
-private val REMIND_OPTIONS = listOf(5 to "5 分钟", 10 to "10 分钟", 15 to "15 分钟", 20 to "20 分钟", 30 to "30 分钟")
+import com.qzkt.timetable.data.anime.MacCmsSource
+import com.qzkt.timetable.data.update.UpdateChecker
+import com.qzkt.timetable.ui.common.SectionCard
+import com.qzkt.timetable.ui.player.PlaybackService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
-    snapshot: TimetableSnapshot,
     onUpdate: ((AppSettings) -> AppSettings) -> Unit,
-    onClearTimetable: () -> Unit,
-    onOpenDebug: () -> Unit,
-    onReconfigure: () -> Unit,
+    animeFavoriteCount: Int = 0,
+    onClearAnimeFavorites: () -> Unit = {},
+    videoSources: List<MacCmsSource> = emptyList(),
+    videoSourceKey: String = "",
+    onSelectVideoSource: (String) -> Unit = {},
 ) {
-    var editingSlot by remember { mutableStateOf<TimeSlot?>(null) }
-    var confirmClear by remember { mutableStateOf(false) }
-
     Scaffold(topBar = { TopAppBar(title = { Text("设置") }) }) { padding ->
         Column(
             modifier = Modifier
@@ -81,240 +70,60 @@ fun SettingsScreen(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            AccountSection(settings = settings, snapshot = snapshot, onReconfigure = onReconfigure)
-            TermSection(settings = settings, onUpdate = onUpdate)
-            TimeTableSection(settings = settings, onEdit = { editingSlot = it })
-            SyncSection(settings = settings, onUpdate = onUpdate)
-            ReminderSection(settings = settings, onUpdate = onUpdate)
+            // 学期、作息时间表、课表同步、上课提醒、数据搬去了课表页顶栏的「课表工具」
             AppearanceSection(settings = settings, onUpdate = onUpdate)
-            DataSection(
-                onOpenDebug = onOpenDebug,
-                onClearTimetable = { confirmClear = true },
+            if (videoSources.isNotEmpty()) {
+                VideoSourceCard(
+                    sources = videoSources,
+                    selectedKey = videoSourceKey,
+                    onSelect = onSelectVideoSource,
+                )
+            }
+            StorageCard(
+                animeFavoriteCount = animeFavoriteCount,
+                onClearAnimeFavorites = onClearAnimeFavorites,
             )
+            AboutCard()
             Spacer(Modifier.height(24.dp))
         }
     }
-
-    editingSlot?.let { slot ->
-        SlotEditDialog(
-            slot = slot,
-            onDismiss = { editingSlot = null },
-            onSave = { updated ->
-                onUpdate { current ->
-                    current.copy(slots = current.slots.map { if (it.period == updated.period) updated else it })
-                }
-                editingSlot = null
-            },
-        )
-    }
-
-    if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("清空课表？") },
-            text = { Text("会删掉本地课表和变动记录，账号配置保留。下次同步可以重新拉取。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClearTimetable()
-                    confirmClear = false
-                }) { Text("清空") }
-            },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
-        )
-    }
 }
 
+/** 影视源：选择影视页从哪个资源站取数据，各源收录和速度不同。 */
 @Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Spacer(Modifier.height(10.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-private fun AccountSection(
-    settings: AppSettings,
-    snapshot: TimetableSnapshot,
-    onReconfigure: () -> Unit,
-) {
-    SectionCard("教务账号") {
-        InfoRow("学校地址", settings.baseUrl.ifBlank { "未配置" })
-        InfoRow("学号", settings.username.ifBlank { "未配置" })
-        InfoRow("课程条数", "${snapshot.sessions.size} 条")
-        if (snapshot.xnxqh.isNotBlank()) InfoRow("学期", snapshot.xnxqh)
-        Spacer(Modifier.height(6.dp))
-        TextButton(onClick = onReconfigure) { Text("重新配置账号") }
-    }
-}
-
-@Composable
-private fun TermSection(
-    settings: AppSettings,
-    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
-) {
-    var firstMonday by remember(settings.firstMonday) { mutableStateOf(settings.firstMonday) }
-    var weekCount by remember(settings.weekCount) { mutableStateOf(settings.weekCount.toString()) }
-    var showPicker by remember { mutableStateOf(false) }
-
-    SectionCard("学期") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = firstMonday,
-                onValueChange = { firstMonday = it },
-                label = { Text("第 1 周周一") },
-                placeholder = { Text("2026-09-07") },
-                singleLine = true,
-                isError = firstMonday.isNotBlank() &&
-                    runCatching { java.time.LocalDate.parse(firstMonday) }.isFailure,
-                supportingText = { Text("课表上的具体日期全靠它") },
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = { showPicker = true }) { Text("选日期") }
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = weekCount,
-                onValueChange = { weekCount = it.filter { c -> c.isDigit() }.take(2) },
-                label = { Text("学期周数") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.width(140.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            TextButton(
-                onClick = {
-                    onUpdate {
-                        it.copy(
-                            firstMonday = firstMonday.trim(),
-                            weekCount = weekCount.toIntOrNull()?.coerceIn(1, 40) ?: it.weekCount,
-                        )
-                    }
-                },
-            ) { Text("保存") }
-        }
-    }
-
-    if (showPicker) {
-        FirstMondayPickerDialog(
-            current = firstMonday,
-            onDismiss = { showPicker = false },
-            onConfirm = { iso ->
-                firstMonday = iso
-                onUpdate { it.copy(firstMonday = iso) }
-                showPicker = false
-            },
-        )
-    }
-}
-
-@Composable
-private fun TimeTableSection(settings: AppSettings, onEdit: (TimeSlot) -> Unit) {
-    SectionCard("作息时间表") {
-        Text(
-            text = "点任意一节改时间。不同学校作息不同，这里的时长会影响「下一节课」和提醒。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-
-        settings.slots.forEach { slot ->
+private fun VideoSourceCard(sources: List<MacCmsSource>, selectedKey: String, onSelect: (String) -> Unit) {
+    SectionCard("影视源") {
+        sources.forEach { source ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(source.key) }
+                    .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("第 ${slot.period} 节", modifier = Modifier.width(70.dp), fontSize = 13.sp)
-                Text("${slot.start} - ${slot.end}", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = { onEdit(slot) }) { Text("修改") }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-        }
-    }
-}
-
-@Composable
-private fun SyncSection(settings: AppSettings, onUpdate: ((AppSettings) -> AppSettings) -> Unit) {
-    SectionCard("课表同步") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("后台定时同步", fontSize = 14.sp)
-                Text(
-                    text = "发现调课、停课、换教室时通知你",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                RadioButton(
+                    selected = source.key == selectedKey,
+                    onClick = { onSelect(source.key) },
                 )
-            }
-            Switch(
-                checked = settings.syncEnabled,
-                onCheckedChange = { enabled -> onUpdate { it.copy(syncEnabled = enabled) } },
-            )
-        }
-
-        Spacer(Modifier.height(10.dp))
-        Text("同步间隔", fontSize = 13.sp)
-        Spacer(Modifier.height(6.dp))
-
-        // 两行放不下就让它自然换行
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            INTERVAL_OPTIONS.chunked(4).forEach { rowOptions ->
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    rowOptions.forEach { (minutes, label) ->
-                        FilterChip(
-                            selected = settings.syncIntervalMinutes == minutes,
-                            onClick = { onUpdate { it.copy(syncIntervalMinutes = minutes) } },
-                            label = { Text(label, fontSize = 12.sp) },
-                        )
-                    }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(source.name, fontSize = 14.sp)
+                    Text(
+                        text = source.baseUrl
+                            .removePrefix("https://").removePrefix("http://")
+                            .substringBefore('/') +
+                            " · " + source.categories.joinToString("／") { it.first },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
-
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
-            text = "系统限制后台任务最快 ${SyncScheduler.MIN_INTERVAL_MINUTES} 分钟一次；" +
-                "手机省电策略可能在更晚的时间才执行。",
+            text = "某个源打不开或内容不全时换个试试",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-private fun ReminderSection(settings: AppSettings, onUpdate: ((AppSettings) -> AppSettings) -> Unit) {
-    SectionCard("上课提醒") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("提前提醒", fontSize = 14.sp)
-                Text(
-                    text = "下一节课开始前发通知",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = settings.remindEnabled,
-                onCheckedChange = { enabled -> onUpdate { it.copy(remindEnabled = enabled) } },
-            )
-        }
-
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            REMIND_OPTIONS.forEach { (minutes, label) ->
-                FilterChip(
-                    selected = settings.remindBeforeMinutes == minutes,
-                    onClick = { onUpdate { it.copy(remindBeforeMinutes = minutes) } },
-                    label = { Text(label, fontSize = 12.sp) },
-                )
-            }
-        }
     }
 }
 
@@ -351,30 +160,229 @@ private fun AppearanceSection(settings: AppSettings, onUpdate: ((AppSettings) ->
     }
 }
 
+/** 存储管理：播放缓存、图片缓存、追番数据，各自显示占用并可以清理。 */
 @Composable
-private fun DataSection(onOpenDebug: () -> Unit, onClearTimetable: () -> Unit) {
-    SectionCard("数据") {
+private fun StorageCard(animeFavoriteCount: Int, onClearAnimeFavorites: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var playbackSize by remember { mutableStateOf<Long?>(null) }
+    var imageSize by remember { mutableStateOf<Long?>(null) }
+    var confirmClearFavorites by remember { mutableStateOf(false) }
+
+    fun refreshSizes() {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val playback = dirSize(File(context.cacheDir, "media_cache"))
+                val image = runCatching {
+                    context.imageLoader.diskCache?.directory?.let { dirSize(File(it.toString())) }
+                }.getOrNull() ?: 0L
+                playback to image
+            }
+            playbackSize = result.first
+            imageSize = result.second
+        }
+    }
+    LaunchedEffect(Unit) { refreshSizes() }
+
+    SectionCard("存储") {
+        StorageRow(
+            title = "播放缓存",
+            desc = "看过的视频分片，上限 256MB",
+            size = formatBytes(playbackSize),
+            action = "清理",
+            onAction = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        val cache = PlaybackService.playbackCache(context)
+                        cache.keys.forEach { key -> cache.removeResource(key) }
+                    }
+                    refreshSizes()
+                }
+            },
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        StorageRow(
+            title = "图片缓存",
+            desc = "番剧封面等图片",
+            size = formatBytes(imageSize),
+            action = "清理",
+            onAction = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            context.imageLoader.diskCache?.clear()
+                            context.imageLoader.memoryCache?.clear()
+                        }
+                    }
+                    refreshSizes()
+                }
+            },
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        StorageRow(
+            title = "影视收藏",
+            desc = "本地保存的收藏与观看进度",
+            size = if (animeFavoriteCount > 0) "$animeFavoriteCount 部" else "暂无",
+            action = if (animeFavoriteCount > 0) "清空" else "",
+            onAction = { confirmClearFavorites = true },
+        )
+    }
+
+    if (confirmClearFavorites) {
+        AlertDialog(
+            onDismissRequest = { confirmClearFavorites = false },
+            title = { Text("清空收藏？") },
+            text = { Text("会删掉全部收藏和观看进度，不影响视频缓存。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onClearAnimeFavorites()
+                    confirmClearFavorites = false
+                }) { Text("清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearFavorites = false }) { Text("取消") }
+            },
+        )
+    }
+}
+
+/** 检查更新在界面上的几种状态。 */
+private sealed interface UpdateUiState {
+    data object Idle : UpdateUiState
+    data object Checking : UpdateUiState
+    data class UpToDate(val currentVersion: String) : UpdateUiState
+    data class Available(val release: UpdateChecker.Release) : UpdateUiState
+    data class Failed(val message: String) : UpdateUiState
+}
+
+/** 关于：当前版本 + 检查更新（读 GitHub Releases，新版可跳浏览器下载）。 */
+@Composable
+private fun AboutCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val currentVersion = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "?"
+    }
+    var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
+
+    SectionCard("关于") {
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("查看接口原始返回", fontSize = 14.sp)
+                Text("当前版本", fontSize = 14.sp)
                 Text(
-                    text = "课表解析不出来时，来这里看学校到底返回了什么",
+                    text = "Tools v$currentVersion",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null)
+            when (state) {
+                is UpdateUiState.Checking -> CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+                else -> TextButton(onClick = {
+                    scope.launch {
+                        state = UpdateUiState.Checking
+                        state = UpdateChecker.check(currentVersion).fold(
+                            onSuccess = { result ->
+                                when (result) {
+                                    is UpdateChecker.CheckResult.UpToDate -> UpdateUiState.UpToDate(result.currentVersion)
+                                    is UpdateChecker.CheckResult.NewVersion -> UpdateUiState.Available(result.release)
+                                }
+                            },
+                            onFailure = { UpdateUiState.Failed(it.message ?: "未知错误") },
+                        )
+                    }
+                }) { Text("检查更新") }
+            }
         }
-        TextButton(onClick = onOpenDebug) { Text("打开") }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onClearTimetable) { Text("清空课表数据", color = MaterialTheme.colorScheme.error) }
+        when (val s = state) {
+            is UpdateUiState.UpToDate -> Text(
+                text = "已是最新版本（v${s.currentVersion}）",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            is UpdateUiState.Failed -> Text(
+                text = "检查失败：${s.message}",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.error,
+            )
+            is UpdateUiState.Available -> {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "发现新版本 v${s.release.version}" +
+                        if (s.release.title.isNotBlank() && s.release.title != "v${s.release.version}") {
+                            "（${s.release.title}）"
+                        } else {
+                            ""
+                        },
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                if (s.release.notes.isNotBlank()) {
+                    var expanded by remember { mutableStateOf(false) }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = s.release.notes,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (expanded) Int.MAX_VALUE else 4,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable { expanded = !expanded },
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        val url = s.release.apkUrl ?: s.release.pageUrl
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (s.release.apkUrl != null) "下载更新" else "打开发布页")
+                }
+            }
+            UpdateUiState.Idle -> Unit
+            UpdateUiState.Checking -> Unit
+        }
     }
+}
+
+@Composable
+private fun StorageRow(title: String, desc: String, size: String, action: String, onAction: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp)
+            Text(
+                text = "$desc，当前 $size",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (action.isNotEmpty()) {
+            TextButton(onClick = onAction) { Text(action) }
+        }
+    }
+}
+
+private fun dirSize(dir: File): Long =
+    runCatching { dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } }.getOrDefault(0L)
+
+private fun formatBytes(bytes: Long?): String = when {
+    bytes == null -> "统计中…"
+    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+    bytes < 1024L * 1024 * 1024 -> String.format("%.1f MB", bytes / 1024.0 / 1024.0)
+    else -> String.format("%.2f GB", bytes / 1024.0 / 1024.0 / 1024.0)
 }
 
 @Composable
@@ -390,51 +398,4 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onCheck
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(80.dp),
-        )
-        Text(text = value, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun SlotEditDialog(slot: TimeSlot, onDismiss: () -> Unit, onSave: (TimeSlot) -> Unit) {
-    var start by remember(slot) { mutableStateOf(slot.start) }
-    var end by remember(slot) { mutableStateOf(slot.end) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("第 ${slot.period} 节时间") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = start,
-                    onValueChange = { start = it },
-                    label = { Text("开始（HH:mm）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = end,
-                    onValueChange = { end = it },
-                    label = { Text("结束（HH:mm）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(slot.copy(start = start.trim(), end = end.trim())) }) { Text("保存") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
 }

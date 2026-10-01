@@ -5,10 +5,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -36,41 +34,76 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.qzkt.timetable.ui.account.AccountScreen
+import com.qzkt.timetable.ui.anime.AnimeDetailScreen
+import com.qzkt.timetable.ui.anime.AnimeScreen
+import com.qzkt.timetable.ui.anime.AnimeViewModel
 import com.qzkt.timetable.ui.debug.DebugScreen
 import com.qzkt.timetable.ui.grid.TimetableScreen
 import com.qzkt.timetable.ui.log.ChangesScreen
 import com.qzkt.timetable.ui.player.PlayerScreen
+import com.qzkt.timetable.ui.player.ResolveScreen
 import com.qzkt.timetable.ui.settings.SettingsScreen
 import com.qzkt.timetable.ui.setup.SetupScreen
+import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
+import com.qzkt.timetable.ui.tools.TimetableToolsScreen
+import com.qzkt.timetable.ui.tools.ToolsScreen
 import com.qzkt.timetable.ui.web.WebImportScreen
 
 private object Routes {
+    /** 工具页：起始页，课表和播放器的入口都在这里。 */
+    const val TOOLS = "tools"
     const val TIMETABLE = "timetable"
+    const val PLAYER = "player"
+    /** 影视：浏览、收藏、选集播放。 */
+    const val ANIME = "anime"
+    /** 链接解析：B站 / 抖音分享链接换真实地址后交给播放器。 */
+    const val RESOLVE = "resolve"
+    /** 参数是资源站里的番剧 id。 */
+    const val ANIME_DETAIL = "anime_detail/{vodId}"
+    /** 课表工具：课表顶栏「工具」图标进去的学期 / 作息 / 同步等配置页。 */
+    const val TIMETABLE_TOOLS = "timetable_tools"
     const val CHANGES = "changes"
     const val SETTINGS = "settings"
     const val DEBUG = "debug"
     const val SETUP = "setup"
     const val WEB = "web"
-    const val PLAYER = "player"
+    const val ACCOUNT = "account"
 }
+
+/** 从「工具」页进去的页面：停在这些页时底部「工具」页签保持选中。 */
+private val TOOLS_SUB_PAGES = setOf(
+    Routes.TIMETABLE,
+    Routes.PLAYER,
+    Routes.RESOLVE,
+    Routes.ANIME,
+    Routes.TIMETABLE_TOOLS,
+    Routes.CHANGES,
+    Routes.ACCOUNT,
+)
 
 private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
 
+// 底部页签只剩「工具」和「设置」：课表、播放器变成了工具页里的两个入口。
 private val TABS = listOf(
-    BottomTab(Routes.TIMETABLE, "课表", Icons.Default.CalendarMonth),
-    BottomTab(Routes.PLAYER, "播放器", Icons.Default.PlayCircle),
-    BottomTab(Routes.CHANGES, "变动", Icons.AutoMirrored.Filled.List),
+    BottomTab(Routes.TOOLS, "工具", Icons.Default.Widgets),
     BottomTab(Routes.SETTINGS, "设置", Icons.Default.Settings),
 )
 
 @Composable
-fun QzktApp(viewModel: MainViewModel, initialMediaUri: android.net.Uri? = null) {
+fun QzktApp(
+    viewModel: MainViewModel,
+    animeViewModel: AnimeViewModel,
+) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
     val changes by viewModel.changes.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val displayWeek by viewModel.displayWeek.collectAsStateWithLifecycle()
     val webImportResult by viewModel.webImportResult.collectAsStateWithLifecycle()
+    val animeFavorites by animeViewModel.favorites.collectAsStateWithLifecycle()
+    val animeSession by animeViewModel.animeSession.collectAsStateWithLifecycle()
+    val animeSourceKey by animeViewModel.sourceKey.collectAsStateWithLifecycle()
 
     val snackbarHost = remember { SnackbarHostState() }
 
@@ -101,7 +134,11 @@ fun QzktApp(viewModel: MainViewModel, initialMediaUri: android.net.Uri? = null) 
                 if (showBottomBar) {
                     NavigationBar {
                         TABS.forEach { tab ->
-                            val selected = backStackEntry?.destination?.hierarchy?.any { it.route == tab.route } == true
+                            // 课表 / 播放器 / 它们的子页现在是从「工具」页进去的，
+                            // 停在这些页时「工具」页签保持选中，
+                            // 否则底部会出现「哪个页签都没选中」的怪状态
+                            val selected = backStackEntry?.destination?.hierarchy?.any { it.route == tab.route } == true ||
+                                (tab.route == Routes.TOOLS && currentRoute in TOOLS_SUB_PAGES)
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = {
@@ -141,11 +178,7 @@ fun QzktApp(viewModel: MainViewModel, initialMediaUri: android.net.Uri? = null) 
 
                 NavHost(
                     navController = navController,
-                    startDestination = when {
-                        initialMediaUri != null -> Routes.PLAYER
-                        settings.configured -> Routes.TIMETABLE
-                        else -> Routes.SETUP
-                    },
+                    startDestination = if (settings.configured) Routes.TOOLS else Routes.SETUP,
                     modifier = Modifier.weight(1f),
                 ) {
                     composable(Routes.SETUP) {
@@ -170,6 +203,43 @@ fun QzktApp(viewModel: MainViewModel, initialMediaUri: android.net.Uri? = null) 
                         )
                     }
 
+                    composable(Routes.TOOLS) {
+                        ToolsScreen(
+                            snapshot = snapshot,
+                            animeFavoriteCount = animeFavorites.size,
+                            onOpenTimetable = { navController.navigate(Routes.TIMETABLE) },
+                            onOpenResolve = { navController.navigate(Routes.RESOLVE) },
+                            onOpenAnime = { navController.navigate(Routes.ANIME) },
+                        )
+                    }
+
+                    composable(Routes.RESOLVE) {
+                        ResolveScreen(
+                            onBack = { navController.popBackStack() },
+                            onPlay = { request ->
+                                animeViewModel.playResolved(request)
+                                navController.navigate(Routes.PLAYER)
+                            },
+                        )
+                    }
+
+                    composable(Routes.ANIME) {
+                        AnimeScreen(
+                            viewModel = animeViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenDetail = { id -> navController.navigate("anime_detail/$id") },
+                        )
+                    }
+
+                    composable(Routes.ANIME_DETAIL) { entry ->
+                        AnimeDetailScreen(
+                            vodId = entry.arguments?.getString("vodId").orEmpty(),
+                            viewModel = animeViewModel,
+                            onBack = { navController.popBackStack() },
+                            onPlay = { navController.navigate(Routes.PLAYER) },
+                        )
+                    }
+
                     composable(Routes.TIMETABLE) {
                         TimetableScreen(
                             snapshot = snapshot,
@@ -179,31 +249,62 @@ fun QzktApp(viewModel: MainViewModel, initialMediaUri: android.net.Uri? = null) 
                             onWeekChange = viewModel::showWeek,
                             onRefresh = viewModel::refresh,
                             onSetFirstMonday = viewModel::setFirstMonday,
+                            changeCount = changes.size,
+                            onOpenChanges = { navController.navigate(Routes.CHANGES) },
+                            onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                            onOpenTools = { navController.navigate(Routes.TOOLS) },
+                        )
+                    }
+
+                    composable(Routes.ACCOUNT) {
+                        AccountScreen(
+                            settings = settings,
+                            snapshot = snapshot,
+                            onBack = { navController.popBackStack() },
+                            onReconfigure = { viewModel.saveSettings { it.copy(configured = false) } },
                         )
                     }
 
                     composable(Routes.PLAYER) {
                         PlayerScreen(
-                            initialUri = initialMediaUri,
                             fullscreen = playerFullscreen,
                             onFullscreenChange = { playerFullscreen = it },
+                            // 番剧页点进来的一路：PlayerScreen 组合时消费
+                            playRequest = animeViewModel.pendingPlay,
+                            onPlayRequestConsumed = { animeViewModel.consumePlayRequest() },
+                            // 播放会话放 VM 里：退出播放器再进来，选集内容还在
+                            animeSession = animeSession,
+                            onEpisodeSwitched = { animeViewModel.switchEpisode(it) },
                         )
                     }
 
                     composable(Routes.CHANGES) {
-                        ChangesScreen(changes = changes, onClear = viewModel::clearChanges)
+                        ChangesScreen(
+                            changes = changes,
+                            onClear = viewModel::clearChanges,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+
+                    composable(Routes.TIMETABLE_TOOLS) {
+                        TimetableToolsScreen(
+                            settings = settings,
+                            onUpdate = viewModel::saveSettings,
+                            onClearTimetable = viewModel::clearTimetable,
+                            onOpenDebug = { navController.navigate(Routes.DEBUG) },
+                            onBack = { navController.popBackStack() },
+                        )
                     }
 
                     composable(Routes.SETTINGS) {
                         SettingsScreen(
                             settings = settings,
-                            snapshot = snapshot,
                             onUpdate = viewModel::saveSettings,
-                            onClearTimetable = viewModel::clearTimetable,
-                            onOpenDebug = { navController.navigate(Routes.DEBUG) },
-                            onReconfigure = {
-                                viewModel.saveSettings { it.copy(configured = false) }
-                            },
+                            animeFavoriteCount = animeFavorites.size,
+                            onClearAnimeFavorites = { animeViewModel.clearFavorites() },
+                            videoSources = animeViewModel.availableSources,
+                            videoSourceKey = animeSourceKey,
+                            onSelectVideoSource = { animeViewModel.selectSource(it) },
                         )
                     }
 

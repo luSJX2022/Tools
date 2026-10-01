@@ -231,7 +231,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         if (report == null) {
             // 课表是应用内登录导进来的，但会话没了：提示重新登录，别报"同步失败"吓人
             _uiState.value = MainUiState(
-                message = "登录状态已失效，无法自动更新。请到设置页「重新配置账号」里再在应用内登录一次。",
+                message = "登录状态已失效，无法自动更新。请到课表右上角「教务账号 → 重新配置账号」里再在应用内登录一次。",
                 messageIsError = true,
             )
             return@launch

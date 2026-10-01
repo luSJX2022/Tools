@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Tools 图标底色：靛蓝 → 深蓝的对角渐变。
+  Tools 图标底色：青 → 深蓝的对角渐变（取自应用里课程块的青/蓝色系）。
   自适应图标里底色铺满整块 108x108（反正会被启动器裁成它自己的形状）。
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -17,8 +17,8 @@
                 android:startY="0"
                 android:endX="108"
                 android:endY="108"
-                android:startColor="#5B7CFA"
-                android:endColor="#1E2AB0" />
+                android:startColor="#00838F"
+                android:endColor="#0D47A1" />
         </aapt:attr>
     </path>
 </vector>

@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,14 +43,23 @@ import java.time.format.DateTimeFormatter
 
 private val TIME_FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
-/** 课表变动日志：每次同步发现的新增/停课/调课都记在这里。 */
+/**
+ * 课表变动日志：每次同步发现的新增/停课/调课都记在这里。
+ *
+ * 原先是底部页签，现在从课表顶部栏右上角的图标进来，所以顶栏要带返回。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChangesScreen(changes: List<SyncChange>, onClear: () -> Unit) {
+fun ChangesScreen(changes: List<SyncChange>, onClear: () -> Unit, onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("课表变动") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
                 actions = {
                     if (changes.isNotEmpty()) {
                         IconButton(onClick = onClear) {
