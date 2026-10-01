@@ -46,7 +46,6 @@ import com.qzkt.timetable.ui.player.ResolveScreen
 import com.qzkt.timetable.ui.settings.SettingsScreen
 import com.qzkt.timetable.ui.setup.SetupScreen
 import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
-import com.qzkt.timetable.ui.tools.TimetableToolsScreen
 import com.qzkt.timetable.ui.tools.ToolsScreen
 import com.qzkt.timetable.ui.web.WebImportScreen
 
@@ -61,8 +60,6 @@ private object Routes {
     const val RESOLVE = "resolve"
     /** 参数是资源站里的番剧 id。 */
     const val ANIME_DETAIL = "anime_detail/{vodId}"
-    /** 课表工具：课表顶栏「工具」图标进去的学期 / 作息 / 同步等配置页。 */
-    const val TIMETABLE_TOOLS = "timetable_tools"
     const val CHANGES = "changes"
     const val SETTINGS = "settings"
     const val DEBUG = "debug"
@@ -77,7 +74,6 @@ private val TOOLS_SUB_PAGES = setOf(
     Routes.PLAYER,
     Routes.RESOLVE,
     Routes.ANIME,
-    Routes.TIMETABLE_TOOLS,
     Routes.CHANGES,
     Routes.ACCOUNT,
 )
@@ -252,7 +248,6 @@ fun QzktApp(
                             changeCount = changes.size,
                             onOpenChanges = { navController.navigate(Routes.CHANGES) },
                             onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
-                            onOpenTools = { navController.navigate(Routes.TOOLS) },
                         )
                     }
 
@@ -260,6 +255,9 @@ fun QzktApp(
                         AccountScreen(
                             settings = settings,
                             snapshot = snapshot,
+                            onUpdate = viewModel::saveSettings,
+                            onClearTimetable = viewModel::clearTimetable,
+                            onOpenDebug = { navController.navigate(Routes.DEBUG) },
                             onBack = { navController.popBackStack() },
                             onReconfigure = { viewModel.saveSettings { it.copy(configured = false) } },
                         )
@@ -282,16 +280,6 @@ fun QzktApp(
                         ChangesScreen(
                             changes = changes,
                             onClear = viewModel::clearChanges,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
-
-                    composable(Routes.TIMETABLE_TOOLS) {
-                        TimetableToolsScreen(
-                            settings = settings,
-                            onUpdate = viewModel::saveSettings,
-                            onClearTimetable = viewModel::clearTimetable,
-                            onOpenDebug = { navController.navigate(Routes.DEBUG) },
                             onBack = { navController.popBackStack() },
                         )
                     }

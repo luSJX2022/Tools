@@ -25,7 +25,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -88,9 +87,9 @@ internal fun computeCurrentWeek(snapshot: TimetableSnapshot, today: LocalDate): 
  * 左右滑动切换周次。同一门课的连堂（比如 1-2 节）用绝对定位在纵向合并成一个块 ——
  * 比逐格渲染更容易处理跨行，也不会出现格子边框被撑开的问题。
  *
- * 顶部栏右上角放着几个入口：**课表变动**（有变动时带角标）、**教务账号**，
- * 还有打开**课表工具**的「工具」图标（学期、作息、同步、提醒、数据，原先都在设置页）。
- * 挪过来是为了看课表时顺手就能点到。
+ * 顶部栏右上角放着两个入口：**课表变动**（有变动时带角标）和**教务账号**。
+ * 学期 / 作息时间表 / 课表同步 / 上课提醒 / 数据那组工具并进了教务账号页（账号信息下面），
+ * 顶栏少一个图标。挪过来都是为了看课表时顺手就能点到。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,7 +105,6 @@ fun TimetableScreen(
     changeCount: Int = 0,
     onOpenChanges: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
-    onOpenTools: () -> Unit = {},
 ) {
     val weekCount = snapshot.weekCount.coerceAtLeast(1)
     val today = remember { LocalDate.now() }
@@ -144,9 +142,6 @@ fun TimetableScreen(
                     }
                     IconButton(onClick = { onWeekChange(currentWeek) }) {
                         Icon(Icons.Default.Today, contentDescription = "回到本周")
-                    }
-                    IconButton(onClick = onOpenTools) {
-                        Icon(Icons.Default.Tune, contentDescription = "课表工具")
                     }
                     // 变动和账号放在最右：这两个入口是这次从底部页签 / 设置页挪过来的
                     IconButton(onClick = onOpenChanges) {
