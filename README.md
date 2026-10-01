@@ -187,33 +187,7 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 解析出来的地址和请求头会一起交给播放器：B站 CDN 必须带
 `Referer: https://www.bilibili.com/`，抖音 CDN 只认手机 UA。
 
-### 真机上踩到的坑（都已在代码里处理）
 
-这几条是拿真机（vivo Y300 / Android 16）实测出来的，不是猜的：
-
-1. **B站接口要 `buvid3` 这个 Cookie**。没有它，`x/web-interface/view` 不回 403 也不回 JSON，
-   而是直接甩一页 `<!DOCTYPE html>` 的风控页 —— 现象是「解析失败」，跟链接对不对毫无关系。
-   处理：请求前先像浏览器那样访问一次 `bilibili.com` 首页把 Set-Cookie 收进内存 CookieJar，
-   首页没给就问 `x/frontend/finger/spi` 直接要 buvid3/buvid4（见 `LinkCookieJar`）。
-   顺带一个坑：用户填的 `Cookie: SESSDATA=…` 如果当普通请求头传，OkHttp 会**顶掉** Jar 里的
-   buvid3，风控立刻回来 —— 所以它被拆进 Jar 统一发。
-2. **B站 CDN 不认安卓 UA**。请求接口时安卓 Chrome UA 最稳，但下载视频时 CDN 恰恰拒绝它：
-   同一台手机上实测，安卓 UA + Accept 头 → 403，去掉 Accept → 403，Referer 不带斜杠 → 403，
-   **换成桌面 Chrome UA 且不带 Accept → 206**。处理：解析完用 `Range: bytes=0-1` 探一次，
-   按「桌面 UA / 安卓 UA」两组试，谁回 2xx 就用谁的头。
-3. **`fnval=1` 的播放地址会落在边缘 / P2P 域名上**（例如 `xxxx.edge.mountaintoys.cn:4483`），
-   那个域名在手机上 connect 直接超时。处理：改用 **`platform=html5&high_quality=1`**，
-   接口直接回 `upos-*.bilivideo.com` 的干净地址，一次探测就过；真碰到连不上的域名，
-   探测循环也会按「先用第一组头把所有地址试完」的顺序换备用镜像。
-4. **抖音分享页没有 `ttwid` 就是空壳**。没有这个 Cookie 时，页面照样有 `_ROUTER_DATA`，
-   但 `item_list` 是空的（页面也不给过滤原因），现象还是「解析不到播放地址」。
-   处理：先向字节的 ttwid 注册接口换一个 ttwid 再抓分享页（见 `DouyinResolver.ensureTtwid`）。
-5. **抖音分享页按 UA 给不同布局，而且不稳定**。有时回带 `videoInfoRes.item_list` 的移动分享页，
-   有时回 **web 布局页**：`loaderData` 里只有 `video_layout` 和 `video_(id)/page`，压根没有播放信息。
-   而且同一个 UA 两次请求结果都能不一样。所以**不能押注某一个 UA**：按 iPhone Safari →
-   微信内置浏览器 → 安卓 Chrome 依次试，谁给数据用谁（logcat 里 tag `QzLink` 会写第几个 UA 命中）。
-   解析器也不再写死 `loaderData → videoInfoRes → item_list` 这条路径，而是在整棵 JSON 树里
-   找第一个真带播放地址的节点，结构再改也不至于直接失效。
 
 ### 已知限制（不粉饰）
 
