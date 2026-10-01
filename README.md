@@ -1,11 +1,20 @@
-# 强智课表（Android）
+# Tools（Android）：课表 · 影视 · 链接解析
 
-一个原生 Android 课表应用：登录学校的**强智教务系统**自动导入本学期课表，
-之后按设定的间隔在后台同步，课表有变动（调课 / 停课 / 换教室）时发通知。
+一个原生 Android 工具箱应用，三个入口：
 
-- Kotlin + Jetpack Compose（Material 3）
-- 数据保存在本机，只有登录时才会连学校的教务系统
-- 支持桌面小组件（今日课程）、上课前提醒
+- **课表**：登录学校的**强智教务系统**自动导入本学期课表，之后按设定的间隔后台同步，
+  课表有变动（调课 / 停课 / 换教室）时发通知；带桌面小组件和上课提醒。
+- **影视**：接入四个第三方资源站（暴风 / 量子 / 360 / 非凡），电影、剧集、动漫、综艺、短剧
+  分类浏览 + 搜索，本地收藏与观看进度，选集后直接进播放器。
+- **链接解析**：B站 / 抖音 App 里「复制链接」出来的一整段文案（短链、带说明文字都行），
+  粘进去解析成真实播放地址，直接播放。
+
+三个入口最后都汇到同一个**后台播放器**（Media3/ExoPlayer + MediaSessionService）：
+锁屏、切后台、页面被回收都还能继续放，支持手势、选集、清晰度切换和下载。
+
+- Kotlin + Jetpack Compose（Material 3）+ Media3 + OkHttp + DataStore
+- minSdk 26，无 Room / 无 Hilt（JSON 文件持久化 + 手写依赖容器，理由见下文）
+- 课表数据保存在本机，只有登录时才会连学校的教务系统
 
 ---
 
@@ -90,7 +99,7 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 
 ---
 
-## 二、首次使用
+## 二、首次使用（课表）
 
 1. 打开 App，填写：
    - **学校强智地址**：就是你平时在电脑浏览器里打开教务系统的网址，例如 `http://jwgl.xxx.edu.cn`。
@@ -100,20 +109,20 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
    - **学期周数**（默认 20）、**第 1 周周一**（可留空，见下）
 2. 点「测试连接」验证地址和账号。失败时会直接显示学校返回的原因。
 3. 点「导入课表」，程序会逐周拉取整个学期的课表。20 周大约十几秒到一分钟。
-4. 导入完成后进入周视图。左右滑动换周。
+4. 导入完成后进入**工具页**（课表 / 影视 / 链接解析三个入口），点「课表」进入周视图，左右滑动换周。
 
 **第 1 周周一**留空时，程序会用教务系统报告的"当前是第几周"倒推出来。
-如果显示的周次不对，到设置页手动填一个准确的"第 1 周周一"（必须是周一）。
+如果显示的周次不对，到课表页顶栏的「工具」→「学期」里手动填一个准确的"第 1 周周一"（必须是周一）。
 
 ---
 
-## 三、"实时更新"到底是什么
+## 三、课表的「实时更新」到底是什么
 
 强智教务系统**没有推送接口**，Android 也不允许 App 常驻长连接，所以这里的"实时"是：
 
 | 手段 | 说明 |
 |---|---|
-| 定时后台同步 | 默认每 6 小时，可在设置里调到最短 15 分钟 |
+| 定时后台同步 | 默认每 6 小时，可在课表页顶栏「工具」→「课表同步」里调到最短 15 分钟 |
 | 手动刷新 | 课表页右上角的刷新按钮 |
 | 变动通知 | 同步后和本地比对，新增 / 停课 / 调课 / 换教室都会通知，并记在课表右上角的「变动」页（有变动时图标上带角标） |
 | 桌面小组件 | 跟着同步结果刷新 |
@@ -133,7 +142,143 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 
 ---
 
-## 四、网页导入失败 / 登录后白屏怎么办
+## 四、影视
+
+工具页「影视」进来，数据来自四个**苹果CMS10 格式的资源站 JSON 接口**（都是公开接口，
+实测存活；分类 id 写死在 `VideoSources.kt` 里，逗号分隔的多个 id 会被当作一次聚合查询）：
+
+| 源 | 域名 | 说明 |
+|---|---|---|
+| 暴风资源 | `bfzyapi.com` | 默认源，m3u8 直连干净 |
+| 量子资源 | `cj.lziapi.com` | 备选，双播放源 |
+| 360资源 | `360zy.com` | HLS 是 AES-128 加密，ExoPlayer 原生支持 |
+| 非凡资源 | `ffzy5.tv` | HTTP 明文接口，要取第二个播放源（代码已处理） |
+
+- **页签**：电影 / 剧集 / 动漫 / 综艺 / 短剧 —— 每个页签聚合该源的一组子分类
+  （接口查父分类不会带子分类内容，所以用逗号拼接叶子分类 id 一次查回）。
+- **搜索**：按名称关键词，跨该源全部分类。
+- **收藏与进度**：详情页点「收藏」，看过第几集自动记录（本地 DataStore JSON，
+  按「源：id」隔离，换源不串数据）；列表里当前位置高亮、看过的变淡。
+- **换源**：设置页 →「影视源」单选切换，列表自动按新源重载。某个源挂了就换一个。
+- **播放**：点剧集进播放器页；在播放器里也能点「选集」直接换集，不用退回详情页。
+
+> **说明**：影视内容全部来自上述第三方公开接口，本项目只做了一个浏览 / 播放的客户端，
+> 不存储、不转码、不代理任何视频内容。
+
+---
+
+## 五、链接解析
+
+工具页「链接解析」进来。能吃两类输入：
+
+1. **B站 / 抖音分享链接**：从 App 里「复制链接」出来的一整段文案直接粘进去
+   （`b23.tv` 短链、带一堆说明文字的都行），点「解析并播放」。
+2. **普通流地址**：HLS（`.m3u8`）、DASH（`.mpd`）、HTTP 直链，不走解析直接播。
+
+防盗链的站可以在「请求头」里补 `Referer` / `User-Agent` / `Cookie`（每行一个 `名称: 值`）。
+
+### 解析流程
+
+| 平台 | 过程 |
+|---|---|
+| B站 | 短链（`b23.tv`）先跟一次跳转拿到 BV 号 → `x/web-interface/view` 拿 cid → `x/player/playurl`（`platform=html5`）拿 MP4 直链；番剧（`ep` / `ss`）走 `pgc/view/web/season` |
+| 抖音 | 短链跳转拿到作品号 → 抓分享页（`iesdouyin.com/share/video/{id}/`）HTML 里的 `_ROUTER_DATA` → 取 `video.play_addr`；分享页改版时退回 `aweme/iteminfo` 老接口 |
+
+解析出来的地址和请求头会一起交给播放器：B站 CDN 必须带
+`Referer: https://www.bilibili.com/`，抖音 CDN 只认手机 UA。
+
+### 真机上踩到的坑（都已在代码里处理）
+
+这几条是拿真机（vivo Y300 / Android 16）实测出来的，不是猜的：
+
+1. **B站接口要 `buvid3` 这个 Cookie**。没有它，`x/web-interface/view` 不回 403 也不回 JSON，
+   而是直接甩一页 `<!DOCTYPE html>` 的风控页 —— 现象是「解析失败」，跟链接对不对毫无关系。
+   处理：请求前先像浏览器那样访问一次 `bilibili.com` 首页把 Set-Cookie 收进内存 CookieJar，
+   首页没给就问 `x/frontend/finger/spi` 直接要 buvid3/buvid4（见 `LinkCookieJar`）。
+   顺带一个坑：用户填的 `Cookie: SESSDATA=…` 如果当普通请求头传，OkHttp 会**顶掉** Jar 里的
+   buvid3，风控立刻回来 —— 所以它被拆进 Jar 统一发。
+2. **B站 CDN 不认安卓 UA**。请求接口时安卓 Chrome UA 最稳，但下载视频时 CDN 恰恰拒绝它：
+   同一台手机上实测，安卓 UA + Accept 头 → 403，去掉 Accept → 403，Referer 不带斜杠 → 403，
+   **换成桌面 Chrome UA 且不带 Accept → 206**。处理：解析完用 `Range: bytes=0-1` 探一次，
+   按「桌面 UA / 安卓 UA」两组试，谁回 2xx 就用谁的头。
+3. **`fnval=1` 的播放地址会落在边缘 / P2P 域名上**（例如 `xxxx.edge.mountaintoys.cn:4483`），
+   那个域名在手机上 connect 直接超时。处理：改用 **`platform=html5&high_quality=1`**，
+   接口直接回 `upos-*.bilivideo.com` 的干净地址，一次探测就过；真碰到连不上的域名，
+   探测循环也会按「先用第一组头把所有地址试完」的顺序换备用镜像。
+4. **抖音分享页没有 `ttwid` 就是空壳**。没有这个 Cookie 时，页面照样有 `_ROUTER_DATA`，
+   但 `item_list` 是空的（页面也不给过滤原因），现象还是「解析不到播放地址」。
+   处理：先向字节的 ttwid 注册接口换一个 ttwid 再抓分享页（见 `DouyinResolver.ensureTtwid`）。
+5. **抖音分享页按 UA 给不同布局，而且不稳定**。有时回带 `videoInfoRes.item_list` 的移动分享页，
+   有时回 **web 布局页**：`loaderData` 里只有 `video_layout` 和 `video_(id)/page`，压根没有播放信息。
+   而且同一个 UA 两次请求结果都能不一样。所以**不能押注某一个 UA**：按 iPhone Safari →
+   微信内置浏览器 → 安卓 Chrome 依次试，谁给数据用谁（logcat 里 tag `QzLink` 会写第几个 UA 命中）。
+   解析器也不再写死 `loaderData → videoInfoRes → item_list` 这条路径，而是在整棵 JSON 树里
+   找第一个真带播放地址的节点，结构再改也不至于直接失效。
+
+### 已知限制（不粉饰）
+
+1. **B站画质受登录状态限制**：不登录一般给到 720P。想上 1080P，把
+   `Cookie: SESSDATA=…`（浏览器登录 B站 后从开发者工具里复制）填进「请求头」。
+2. **B站只支持 MP4 直链（`durl`）**，不合并 DASH：播放器这头只能塞一个
+   `MediaItem`，音视频分离的流没法合并，所以接口只回 dash 时会明确报错，
+   而不是丢一条没声音的流出来。
+3. **超长视频可能被 B站切成多段**，这时只能播第一段（界面上会提示）。
+4. **抖音的直链是有时效的**，解析出来的地址过几小时就失效；失效了就重新粘一次
+   分享链接。
+5. 抖音作品需要登录（或已删除）时拿不到地址，界面会直说，而不是转圈。
+
+---
+
+## 六、播放器（内嵌播放页）
+
+播放器页面**不在工具页显示**，由「影视」选集和「链接解析」跳进来，只负责播：
+Media3/ExoPlayer 解码（硬解失败自动回退软解），支持 HLS / DASH / MP4 直链。
+
+播放本体在 `PlaybackService`（MediaSessionService）里，页面通过 `MediaController`
+连上去控制，所以切后台 / 锁屏 / 页面被回收都还能继续放。
+
+### 快捷手势（小窗和全屏都支持）
+
+| 手势 | 作用 |
+|---|---|
+| 横向拖动 | 快进 / 快退（整屏宽约 90 秒，松手生效，拖动全程有提示气泡） |
+| 左半边上下拖动 | 亮度（窗口亮度，只影响当前页面） |
+| 右半边上下拖动 | 音量 |
+| 双击 | 播放 / 暂停 |
+| 单击 | 显示 / 隐藏控制条 |
+
+手势挂在 PlayerView 的触摸监听上：控制条上的按钮（播放、进度条、选集、清晰度、
+全屏、设置）是它的子 View，触摸优先分发给子 View，所以手势和控制条互不干扰。
+
+### 选集与清晰度
+
+控制条上的「选集」「清晰度」按钮（排在全屏按钮左边）点开**暗色菜单**，
+样式与 media3 自带的设置菜单一致：
+
+- 选集：当前集打勾、看过的变淡，点任意一集原地切集（进度自动记录）；
+- 清晰度：列出当前流的分辨率，「自动」+ 各档位，用轨道选择参数限高切换。
+
+### 下载
+
+正在播的那一路点「下载到本地」就能存下来（带进度）。下载用的是**和播放完全相同的
+请求头** —— B站/抖音的 CDN 少了 Referer / UA 就是 403。中途取消或失败会把半截文件清掉。
+
+| 系统 | 位置 | 说明 |
+|---|---|---|
+| Android 10 及以上 | `Movies/qzkt/<标题>.mp4` | 走 MediaStore，**不需要存储权限**，文件管理/相册里能看到，卸载应用也还在 |
+| Android 8 / 9 | `Android/data/com.qzkt.timetable/files/Movies/` | 这两个版本写公开目录要 `WRITE_EXTERNAL_STORAGE`；为了下载一个视频就弹权限不划算，退回应用自己的目录（完整路径会显示在界面上，卸载即删） |
+
+文件名取解析出来的标题，去掉 `/ : * ? " < > |` 这些不能做文件名的字符，认不出扩展名时按 `.mp4`。
+
+### 性能
+
+取流走 OkHttp（连接池 + 断线自动重连），下载过的 HLS 分片落盘（256MB LRU 缓存，
+回拖 / 重播不再走网络），最多预载 120 秒；无歌词时不做高频页面刷新。
+没有歌词文件时歌词区整体隐藏。
+
+---
+
+## 七、网页导入失败 / 登录后白屏怎么办
 
 网页导入用的是系统 WebView。有几个坑是这一类教务系统必踩的，代码里已经处理了：
 
@@ -165,14 +310,14 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 
 ---
 
-## 五、各校强智字段不一样，课表显示不出来怎么办
+## 八、各校强智字段不一样，课表显示不出来怎么办
 
 强智有多个版本，同一个接口 `getKbcxAzc` 返回的字段名各校不同。本项目用
 **别名表 + 启发式推断**尽量兜住，但仍可能遇到没见过的写法。
 
-排查步骤（前两步在设置页）：
+排查步骤：
 
-1. 设置页 →「查看接口原始返回」，看学校到底返回了什么 JSON。
+1. 课表页顶栏「工具」→「数据」→「查看接口原始返回」，看学校到底返回了什么 JSON。
 2. 如果字段名是新的（比如课程名字段叫 `kc` 而不是 `kcmc`），在
    `app/src/main/kotlin/com/qzkt/timetable/jw/parse/FieldAliases.kt`
    对应的别名列表里加一条即可。
@@ -183,7 +328,7 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 
 ---
 
-## 六、代码结构
+## 九、代码结构
 
 ```
 app/src/main/kotlin/com/qzkt/timetable/
@@ -195,10 +340,21 @@ app/src/main/kotlin/com/qzkt/timetable/
 │   ├── qz/QzAppDoAdapter.kt    强智 app.do 移动端接口（主通道）
 │   ├── qz/QzWebParser.kt       网页版课表 HTML 解析（兜底通道）
 │   └── parse/                  节次、周次、字段别名、课表 JSON 的容错解析
-├── data/                       JSON 文件持久化 + DataStore 配置 + 仓库（逐周合并、变更检测）
+├── data/
+│   ├── AppSettings / SettingsStore / TimetableStore / TimetableRepository
+│   ├── anime/                  影视：模型、资源站客户端（MacCmsSource / VideoSources）、收藏与进度
+│   └── update/                 检查更新（GitHub Releases）
 ├── sync/                       WorkManager 定时同步、通知、上课提醒闹钟
 ├── widget/                     Glance 桌面小组件
-└── ui/                         Compose 界面（配置向导 / 周视图 + 顶部栏的变动·账号 / 设置 / 调试 / 网页导入 / 播放器）
+└── ui/
+    ├── QzktApp.kt              导航壳：工具页为起始页，底部「工具 / 设置」两个页签
+    ├── grid/                   课表周视图
+    ├── tools/                  工具页 + 课表工具子页（学期 / 作息 / 同步 / 提醒 / 数据）
+    ├── anime/                  影视列表、详情、ViewModel
+    ├── player/                 播放页、快捷手势、后台播放服务、链接解析页、B站/抖音解析器
+    ├── settings/               外观 / 影视源 / 存储管理 / 关于
+    ├── account/ log/ debug/ setup/ web/   教务账号 / 变动日志 / 调试 / 配置向导 / 网页导入
+    └── common/ theme/          公共组件（SectionCard / SplashOverlay）/ 主题
 ```
 
 ### 接口约定
@@ -258,7 +414,7 @@ WebView 里登录 → 会话 cookie 存进设置 → 后台定时同步拿这个
 
 ---
 
-## 七、测试
+## 十、测试
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -286,92 +442,29 @@ WebView 里登录 → 会话 cookie 存进设置 → 后台定时同步拿这个
 
 ---
 
-## 八、播放器（Tools 的第二个工具）
+## 十一、检查更新与发新版
 
-底部页签「播放器」能放三类东西：
+设置页 →「关于」→「检查更新」：读 GitHub Releases 的最新版本，
+和当前版本号**逐段数值比较**（`1.2.10 > 1.2.9`，带不带 `v` 前缀都认）。
 
-1. **本地文件**（「选择文件」，或从别的应用「打开方式」进来）；
-2. **网络地址**：HLS（`.m3u8`）、DASH（`.mpd`）、HTTP 直链；防盗链的站可以在
-   「请求头」里补 `Referer` / `User-Agent`；
-3. **B站 / 抖音的分享链接**：从手机 App 里「复制链接」出来的一整段文案直接粘进
-   输入框（或点「粘贴」）再点「播放」即可 —— 短链、带一堆说明文字都行；
-4. **下载**：正在播的那一路点「下载」就能存到本地（带进度），下完还能直接「播放已下载」。
+- 最新版号更大 → 显示「发现新版本」+ Release 说明 + 「下载更新」按钮
+  （Release 里传了 `.apk` 附件就跳浏览器下载 APK，没传就跳发布页）；
+- 仓库还没有 Release，或当前已是最新 → 明确提示。
 
-播放器本体在 `PlaybackService`（MediaSessionService）里，页面通过 `MediaController`
-连上去控制，所以切后台 / 锁屏 / 页面被回收都还能继续放。
+**发一版的固定流程**：
 
-### 分享链接是怎么解析的
+```bash
+# 1. 升版本号（app/build.gradle.kts 里 versionName / versionCode）
+# 2. 打包
+./gradlew :app:assembleDebug
+# 3. 提交推送
+git add -A && git commit -m "版本号升至 x.y.z" && git push
+# 4. 发 Release（tag 带 v 前缀，挂上 apk）
+gh release create vX.Y.Z Tools-vX.Y.Z.apk --title "vX.Y.Z" --notes-file notes.md
+```
 
-| 平台 | 过程 |
-|---|---|
-| B站 | 短链（`b23.tv`）先跟一次跳转拿到 BV 号 → `x/web-interface/view` 拿 cid → `x/player/playurl` 拿播放地址；番剧（`ep` / `ss`）走 `pgc/view/web/season` |
-| 抖音 | 短链跳转拿到作品号 → 抓分享页（`iesdouyin.com/share/video/{id}/`）HTML 里的 `_ROUTER_DATA` → 取 `video.play_addr`；分享页改版时退回 `aweme/iteminfo` 老接口 |
+Release 的 `body` 会作为更新说明显示在应用内（默认折叠 4 行，可展开）。
 
-解析出来的地址和请求头会一起交给播放器：B站 CDN 必须带
-`Referer: https://www.bilibili.com/`，抖音 CDN 只认手机 UA。
+---
 
-### 真机上踩到的坑（都已在代码里处理）
-
-这几条是拿真机（vivo Y300 / Android 16）实测出来的，不是猜的：
-
-1. **B站接口要 `buvid3` 这个 Cookie**。没有它，`x/web-interface/view` 不回 403 也不回 JSON，
-   而是直接甩一页 `<!DOCTYPE html>` 的风控页 —— 现象是「解析失败」，跟链接对不对毫无关系。
-   处理：请求前先像浏览器那样访问一次 `bilibili.com` 首页把 Set-Cookie 收进内存 CookieJar，
-   首页没给就问 `x/frontend/finger/spi` 直接要 buvid3/buvid4（见 `LinkCookieJar`）。
-   顺带一个坑：用户填的 `Cookie: SESSDATA=…` 如果当普通请求头传，OkHttp 会**顶掉** Jar 里的
-   buvid3，风控立刻回来 —— 所以它被拆进 Jar 统一发。
-2. **B站 CDN 不认安卓 UA**。请求接口时安卓 Chrome UA 最稳，但下载视频时 CDN 恰恰拒绝它：
-   同一台手机上实测，安卓 UA + Accept 头 → 403，去掉 Accept → 403，Referer 不带斜杠 → 403，
-   **换成桌面 Chrome UA 且不带 Accept → 206**。处理：解析完用 `Range: bytes=0-1` 探一次，
-   按「桌面 UA / 安卓 UA」两组试，谁回 2xx 就用谁的头（正常情况只多花一个请求）。
-3. **主地址可能落在边缘 / P2P 节点上**（例如 `809al93l.edge.mountaintoys.cn:4483`），
-   那个域名在手机上 connect 直接超时；`backup_url` 里的 `upos-*.bilivideo.com` 才是通的。
-   处理：候选地址里常规镜像排前面，主地址连不上就换备用镜像，不在它身上把每组请求头都超时一遍。
-
-4. **抖音分享页没有 `ttwid` 就是空壳**。没有这个 Cookie 时，页面照样有 `_ROUTER_DATA`，
-   但 `item_list` 是空的（页面也不给过滤原因），现象还是「解析不到播放地址」。
-   处理：先向字节的 ttwid 注册接口换一个 ttwid 再抓分享页（见 `DouyinResolver.ensureTtwid`）。
-5. **抖音分享页按 UA 给不同布局，而且不稳定**。有时回带 `videoInfoRes.item_list` 的移动分享页，
-   有时回 **web 布局页**：`loaderData` 里只有 `video_layout` 和 `video_(id)/page`，压根没有播放信息
-   （日志里连着两次 `没有播放地址：loaderData=[video_layout,video_(id)/page]`）。
-   而且同一个 UA 两次请求结果都能不一样 —— 实测一次 UA#2 命中，另一次 UA#1、UA#2 全落空、UA#3 才命中。
-   所以**不能押注某一个 UA**：按 iPhone Safari → 微信内置浏览器 → 安卓 Chrome 依次试，谁给数据用谁
-   （logcat 里 tag `QzLink` 会写第几个 UA 命中）。
-   解析器也不再写死 `loaderData → videoInfoRes → item_list` 这条路径，而是在整棵 JSON 树里
-   找第一个真带播放地址的节点，结构再改也不至于直接失效。
-
-实测结果（真机，两台都是完整链路）：
-
-| 平台 | 解析 | 播放 | 下载 |
-|---|---|---|---|
-| B站 `BV1GJ411x7h7` | ✅ 标题 + 720P | ✅ | ✅ `Never Gonna Give You Up - Rick Astley · 720P.mp4` **51,973,319 字节**，与接口报的 size 一致 |
-| 抖音 `v.douyin.com/LLb_Um7Z5wo/` | ✅ 标题取到作品原文 | ✅ | ✅ `KB 就这样被升调海伊原地硬控 #古风演唱会现场 #国风起时.mp4` **3,677,628 字节** |
-
-两个文件都落在 `/sdcard/Movies/qzkt/`，可直接在相册/文件管理里打开。
-
-### 下载到哪里
-
-| 系统 | 位置 | 说明 |
-|---|---|---|
-| Android 10 及以上 | `Movies/qzkt/<标题>.mp4` | 走 MediaStore，**不需要存储权限**，文件管理/相册里能看到，卸载应用也还在 |
-| Android 8 / 9 | `Android/data/com.qzkt.timetable/files/Movies/` | 这两个版本写公开目录要 `WRITE_EXTERNAL_STORAGE`；为了下载一个视频就弹权限不划算，退回应用自己的目录（完整路径会显示在界面上，卸载即删） |
-
-文件名取解析出来的标题，去掉 `/ : * ? " < > |` 这些不能做文件名的字符，认不出扩展名时按 `.mp4`。
-下载用的是**和播放完全相同的请求头** —— B站/抖音的 CDN 少了 Referer / UA 就是 403。
-中途取消或失败会把半截文件清掉（MediaStore 里那条 `IS_PENDING` 记录一并删）。
-
-### 已知限制（不粉饰）
-
-1. **B站画质受登录状态限制**：不登录一般只给到 480P。想上 1080P，把
-   `Cookie: SESSDATA=…`（浏览器登录 B站 后从开发者工具里复制）填进「请求头」，
-   解析时会一起带给接口和 CDN。
-2. **B站只支持 MP4 直链（`durl`）**，不合并 DASH：播放器这头只能塞一个
-   `MediaItem`，音视频分离的流没法合并，所以接口只回 dash 时会明确报错，
-   而不是丢一条没声音的流出来。
-3. **超长视频可能被 B站切成多段**，这时只能播第一段（界面上会提示）。
-4. **抖音的直链是有时效的**，解析出来的地址过几小时就失效；失效了就重新粘一次
-   分享链接。
-5. 抖音作品需要登录（或已删除）时拿不到地址，界面会直说，而不是转圈。
-6. **HLS（`.m3u8`）和 DASH（`.mpd`）不能直接下载**：它们本身只是播放列表，
-   要下载得把所有分片拉下来再合并（B站 DASH 还要音视频各合一路），这一步没做，
-   点下载会明确说明，而不是存一个放着没用的 `.m3u8`。
+*影视功能的视频内容均来自上述第三方公开接口，本项目不存储、不转码、不代理任何视频内容，仅供学习交流。*
