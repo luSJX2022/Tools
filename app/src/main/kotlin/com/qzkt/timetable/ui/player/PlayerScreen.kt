@@ -31,8 +31,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -122,8 +120,6 @@ fun PlayerScreen(
     var lastError by remember { mutableStateOf<String?>(null) }
     var lyricIndex by remember { mutableStateOf(-1) }
     var positionMs by remember { mutableStateOf(0L) }
-    var repeatAll by remember { mutableStateOf(false) }
-    var repeatOne by remember { mutableStateOf(false) }
     var shuffle by remember { mutableStateOf(false) }
     // 解析出来的标题（B站/抖音的地址是 CDN 直链，光看地址看不出是什么视频）
     var resolvedTitle by rememberSaveable { mutableStateOf<String?>(null) }
@@ -212,13 +208,6 @@ fun PlayerScreen(
         pendingUriText = null   // 消费掉，重建时不会再放一遍
     }
 
-    LaunchedEffect(controller, repeatAll, repeatOne) {
-        controller?.repeatMode = when {
-            repeatOne -> Player.REPEAT_MODE_ONE
-            repeatAll -> Player.REPEAT_MODE_ALL
-            else -> Player.REPEAT_MODE_OFF
-        }
-    }
     LaunchedEffect(controller, shuffle) { controller?.shuffleModeEnabled = shuffle }
 
     // 推进歌词（Media3 没有逐帧回调，轮询取位置）。
@@ -401,18 +390,6 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconToggleButton(
-                    checked = repeatOne,
-                    onCheckedChange = { repeatOne = it; if (it) repeatAll = false },
-                ) {
-                    Icon(Icons.Default.RepeatOne, contentDescription = "单曲循环")
-                }
-                IconToggleButton(
-                    checked = repeatAll,
-                    onCheckedChange = { repeatAll = it; if (it) repeatOne = false },
-                ) {
-                    Icon(Icons.Default.Repeat, contentDescription = "列表循环")
-                }
                 IconToggleButton(
                     checked = shuffle,
                     onCheckedChange = { shuffle = it },
