@@ -177,15 +177,6 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 
 防盗链的站可以在「请求头」里补 `Referer` / `User-Agent` / `Cookie`（每行一个 `名称: 值`）。
 
-### 解析流程
-
-| 平台 | 过程 |
-|---|---|
-| B站 | 短链（`b23.tv`）先跟一次跳转拿到 BV 号 → `x/web-interface/view` 拿 cid → `x/player/playurl`（`platform=html5`）拿 MP4 直链；番剧（`ep` / `ss`）走 `pgc/view/web/season` |
-| 抖音 | 短链跳转拿到作品号 → 抓分享页（`iesdouyin.com/share/video/{id}/`）HTML 里的 `_ROUTER_DATA` → 取 `video.play_addr`；分享页改版时退回 `aweme/iteminfo` 老接口 |
-
-解析出来的地址和请求头会一起交给播放器：B站 CDN 必须带
-`Referer: https://www.bilibili.com/`，抖音 CDN 只认手机 UA。
 
 
 
