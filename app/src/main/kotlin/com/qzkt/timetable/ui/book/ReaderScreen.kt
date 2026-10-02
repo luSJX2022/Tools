@@ -8,13 +8,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,20 +34,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.qzkt.timetable.data.book.Book
+import com.qzkt.timetable.data.book.BookSources
+import com.qzkt.timetable.data.book.OnlineChapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.withContext
 
 /**
- * TXT 阅读页：整本读入内存按空行切段，LazyColumn 顺着滚，
- * 进度按「段落下标」记录 —— 重排、换字号都不丢位置。
- *
- * 点屏幕中间呼出上下的操作条：返回 + 书名在顶上，字号 / 夜间 / 进度在底下。
+ * 阅读页。kind = local：整本 txt 读入内存按段落滚；
+ * kind = online：按章节从书源拉正文，菜单里有上一章 / 目录 / 下一章。
+ * 进度：local 记段落下标，online 记章节下标。
  */
 @Composable
 fun ReaderScreen(
@@ -55,27 +56,39 @@ fun ReaderScreen(
     viewModel: BookViewModel,
     onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
     val books by viewModel.books.collectAsStateWithLifecycle()
+    val book = books.firstOrNull { it.id == bookId }
+
+    when {
+        book == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        book.kind == "online" -> OnlineReader(book = book, viewModel = viewModel, onBack = onBack)
+        else -> LocalReader(book = book, viewModel = viewModel, onBack = onBack)
+    }
+}
+
+// ---------- 本地 TXT ----------
+
+@Composable
+private fun LocalReader(book: Book, viewModel: BookViewModel, onBack: () -> Unit) {
+    val context = LocalContext.current
     val fontSize by viewModel.fontSize.collectAsStateWithLifecycle()
     val night by viewModel.night.collectAsStateWithLifecycle()
-    val book = books.firstOrNull { it.id == bookId }
 
     var text by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
-    var lastIndex by remember { mutableIntStateOf(book?.lastIndex ?: 0) }
+    var lastIndex by remember { mutableIntStateOf(book.lastIndex) }
 
     val bgColor = if (night) Color(0xFF121212) else MaterialTheme.colorScheme.background
     val textColor = if (night) Color(0xFFC8C8C8) else MaterialTheme.colorScheme.onBackground
-    val barColor = if (night) Color(0xFF1D1D1D) else MaterialTheme.colorScheme.surfaceVariant
 
-    LaunchedEffect(book?.uri) {
-        val uri = book?.uri ?: return@LaunchedEffect
+    LaunchedEffect(book.uri) {
         text = null
         loadError = null
         text = withContext(Dispatchers.IO) {
-            runCatching { readBookText(context, Uri.parse(uri)) }
+            runCatching { readBookText(context, Uri.parse(book.uri)) }
                 .onFailure { loadError = it.message ?: "打不开这个文件" }
                 .getOrNull()
         }
@@ -86,17 +99,15 @@ fun ReaderScreen(
     }
     val listState = rememberLazyListState()
 
-    // 恢复上次进度：等正文加载完、段落总数和记录时一致才跳
-    LaunchedEffect(paragraphs, book?.lastIndex) {
-        val target = book?.lastIndex ?: 0
-        val total = book?.lastParagraphTotal ?: 0
-        if (paragraphs.isNotEmpty() && total in 1..paragraphs.size && target in 0 until paragraphs.size) {
+    // 恢复上次进度：段落总数和记录时一致才跳（文件被改过就不乱跳）
+    LaunchedEffect(paragraphs, book.lastIndex, book.lastParagraphTotal) {
+        val target = book.lastIndex
+        if (paragraphs.isNotEmpty() && book.lastParagraphTotal == paragraphs.size && target in 0 until paragraphs.size) {
             listState.scrollToItem(target)
         }
         lastIndex = if (target in 0 until paragraphs.size) target else 0
     }
 
-    // 滚动时把位置记到内存；落盘放在离开页面时（DisposableEffect）一次写
     LaunchedEffect(paragraphs) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .drop(1)
@@ -104,55 +115,229 @@ fun ReaderScreen(
     }
     DisposableEffect(Unit) {
         onDispose {
-            val currentBook = book ?: return@onDispose
             if (paragraphs.isNotEmpty()) {
-                viewModel.saveProgress(currentBook.id, lastIndex, paragraphs.size)
+                viewModel.saveProgress(book.id, lastIndex, paragraphs.size)
             }
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor),
-    ) {
+    ReaderScaffold(
+        title = book.name,
+        night = night,
+        menuOpen = menuOpen,
+        onToggleMenu = { menuOpen = !menuOpen },
+        onBack = onBack,
+        bottomBar = {
+            TextButton(onClick = { viewModel.setFontSize(fontSize - 1) }) { Text("A-", color = textColor) }
+            TextButton(onClick = { viewModel.setFontSize(fontSize + 1) }) { Text("A+", color = textColor) }
+            TextButton(onClick = { viewModel.setNight(!night) }) {
+                Text(if (night) "日间" else "夜间", color = textColor)
+            }
+            Box(Modifier.weight(1f))
+            Text(
+                text = progressLabel(lastIndex, paragraphs.size),
+                color = textColor,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        },
+    ) { padding ->
         when {
-            text == null && loadError == null -> Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
-
+            text == null && loadError == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
             loadError != null -> Text(
                 text = "打不开这本书：$loadError",
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
             )
-
             else -> LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 18.dp,
-                    vertical = 24.dp,
-                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 24.dp),
             ) {
                 items(paragraphs.size) { index ->
                     val paragraph = paragraphs[index]
                     Text(
-                        // 空行保留成一段小空隙，正文段落正常渲染
                         text = paragraph.ifBlank { " " },
                         fontSize = fontSize.sp,
                         lineHeight = (fontSize * 1.7f).sp,
                         color = if (paragraph.isBlank()) Color.Transparent else textColor,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     )
                 }
             }
         }
+        padding
+    }
+}
 
-        // 顶栏（书名 + 返回），点屏幕中间切换显隐
+// ---------- 在线书源 ----------
+
+@Composable
+private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Unit) {
+    val fontSize by viewModel.fontSize.collectAsStateWithLifecycle()
+    val night by viewModel.night.collectAsStateWithLifecycle()
+    val source = remember(book.sourceKey) { BookSources.byKey(book.sourceKey) }
+
+    var chapters by remember { mutableStateOf<List<OnlineChapter>?>(null) }
+    var chapterIndex by remember { mutableIntStateOf(book.lastIndex) }
+    var content by remember { mutableStateOf<String?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var reloadTick by remember { mutableIntStateOf(0) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var showCatalog by remember { mutableStateOf(false) }
+    var lastIndex by remember { mutableIntStateOf(book.lastIndex) }
+
+    val bgColor = if (night) Color(0xFF121212) else MaterialTheme.colorScheme.background
+    val textColor = if (night) Color(0xFFC8C8C8) else MaterialTheme.colorScheme.onBackground
+    val barColor = if (night) Color(0xFF1D1D1D) else MaterialTheme.colorScheme.surfaceVariant
+
+    // 换章（或重试）时重新拉正文；目录顺路拉一次
+    LaunchedEffect(chapterIndex, reloadTick) {
+        loadError = null
+        content = null
+        try {
+            val list = chapters ?: source.catalog(book.bookUrl).also { chapters = it }
+            val chapter = list.getOrNull(chapterIndex) ?: error("章节下标超出范围")
+            lastIndex = chapterIndex
+            content = source.content(chapter)
+        } catch (e: Exception) {
+            loadError = e.message ?: "加载失败"
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.saveProgress(book.id, lastIndex, chapters?.size ?: 0)
+        }
+    }
+
+    val chapterTitle = chapters?.getOrNull(chapterIndex)?.title.orEmpty()
+    val paragraphs = remember(content) { content?.replace("\r\n", "\n")?.split('\n').orEmpty() }
+
+    ReaderScaffold(
+        title = book.name,
+        night = night,
+        menuOpen = menuOpen,
+        onToggleMenu = { menuOpen = !menuOpen },
+        onBack = onBack,
+        bottomBar = {
+            val chapterCount = chapters?.size ?: 0
+            TextButton(
+                onClick = { chapterIndex-- },
+                enabled = chapterIndex > 0,
+            ) { Text("上一章", color = textColor) }
+            TextButton(onClick = { showCatalog = true }) { Text("目录", color = textColor) }
+            TextButton(
+                onClick = { chapterIndex++ },
+                enabled = chapterCount > 0 && chapterIndex < chapterCount - 1,
+            ) { Text("下一章", color = textColor) }
+            Box(Modifier.weight(1f))
+            Text(
+                text = if (chapterCount > 0) "第 ${chapterIndex + 1}/$chapterCount 章" else "…",
+                color = textColor,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        },
+    ) { padding ->
+        when {
+            (content == null || chapters == null) && loadError == null ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+
+            loadError != null -> Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            ) {
+                Text("加载失败：$loadError", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { reloadTick++ }) { Text("重试") }
+            }
+
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 24.dp),
+            ) {
+                if (chapterTitle.isNotBlank()) {
+                    item {
+                        Text(
+                            text = chapterTitle,
+                            fontSize = (fontSize + 2).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            modifier = Modifier.padding(bottom = 12.dp),
+                        )
+                    }
+                }
+                items(paragraphs.size) { index ->
+                    val paragraph = paragraphs[index]
+                    Text(
+                        text = paragraph.ifBlank { " " },
+                        fontSize = fontSize.sp,
+                        lineHeight = (fontSize * 1.7f).sp,
+                        color = if (paragraph.isBlank()) Color.Transparent else textColor,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    )
+                }
+            }
+        }
+        padding
+    }
+
+    if (showCatalog) {
+        val list = chapters
+        AlertDialog(
+            onDismissRequest = { showCatalog = false },
+            title = { Text("目录（共 ${list?.size ?: 0} 章）") },
+            text = {
+                if (list == null) {
+                    Text("目录还在加载…")
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                        items(list.size) { index ->
+                            Text(
+                                text = list[index].title,
+                                fontSize = 14.sp,
+                                color = if (index == chapterIndex) MaterialTheme.colorScheme.primary else textColor,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        chapterIndex = index
+                                        showCatalog = false
+                                    }
+                                    .padding(vertical = 8.dp),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCatalog = false }) { Text("关闭") }
+            },
+        )
+    }
+}
+
+// ---------- 共用骨架 ----------
+
+/** 阅读页骨架：背景 + 内容 + 可开关的顶栏 / 底栏。 */
+@Composable
+private fun ReaderScaffold(
+    title: String,
+    night: Boolean,
+    menuOpen: Boolean,
+    onToggleMenu: () -> Unit,
+    onBack: () -> Unit,
+    bottomBar: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.(padding: androidx.compose.foundation.layout.PaddingValues) -> Unit,
+) {
+    val barColor = if (night) Color(0xFF1D1D1D) else MaterialTheme.colorScheme.surfaceVariant
+    val textColor = if (night) Color(0xFFC8C8C8) else MaterialTheme.colorScheme.onBackground
+    val bgColor = if (night) Color(0xFF121212) else MaterialTheme.colorScheme.background
+
+    Box(modifier = Modifier.fillMaxSize().background(bgColor)) {
+        content(androidx.compose.foundation.layout.PaddingValues(0.dp))
+
         if (menuOpen) {
             Row(
                 modifier = Modifier
@@ -162,20 +347,17 @@ fun ReaderScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = textColor)
                 }
                 Text(
-                    text = book?.name ?: "阅读",
+                    text = title,
                     color = textColor,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 16.dp),
+                    modifier = Modifier.weight(1f).padding(end = 16.dp),
                 )
             }
 
-            // 底栏：字号 / 夜间 / 进度
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -183,23 +365,12 @@ fun ReaderScreen(
                     .align(Alignment.BottomCenter),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = { viewModel.setFontSize(fontSize - 1) }) { Text("A-", color = textColor) }
-                TextButton(onClick = { viewModel.setFontSize(fontSize + 1) }) { Text("A+", color = textColor) }
-                TextButton(onClick = { viewModel.setNight(!night) }) {
-                    Text(if (night) "日间" else "夜间", color = textColor)
-                }
-                Box(modifier = Modifier.weight(1f))
-                Text(
-                    text = progressLabel(lastIndex, paragraphs.size),
-                    color = textColor,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
+                bottomBar()
             }
         }
 
-        // 点屏幕中间：切换操作条（透明点击区，不碰 LazyColumn 的滚动）
-        if (text != null && loadError == null) {
+        // 点屏幕中间呼出 / 收起操作条（透明点击区，不碰正文的滚动）
+        if (!menuOpen) {
             val centerInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             Box(
                 modifier = Modifier
@@ -207,9 +378,9 @@ fun ReaderScreen(
                     .clickable(
                         interactionSource = centerInteraction,
                         indication = null,
-                        onClick = { menuOpen = !menuOpen },
+                        onClick = onToggleMenu,
                     )
-                    .padding(horizontal = 60.dp, vertical = 120.dp),
+                    .padding(horizontal = 70.dp, vertical = 140.dp),
             )
         }
     }

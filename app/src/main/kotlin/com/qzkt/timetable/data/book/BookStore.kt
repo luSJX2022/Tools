@@ -28,16 +28,24 @@ private data class BookStoreData(
     val readerNight: Boolean = false,
 )
 
-/** 书架上的一本书（txt 文件本体留在原处，这里只记地址和进度）。 */
+/** 书架上的一本书：kind = local（txt 文件）或 online（在线书源）。 */
 @Serializable
 data class Book(
     val id: String,
     val name: String,
-    /** content:// 地址，导入时已拿持久化读权限。 */
+    /** local：content:// 地址；online：书籍落地页路径。 */
     val uri: String,
     val addedAt: Long,
-    /** 读到的段落下标（0 起），配合 [lastParagraphTotal] 算百分比。 */
+    val kind: String = "local",
+    /** online 用：书源 key。 */
+    val sourceKey: String = "",
+    /** online 用：书籍落地页路径。 */
+    val bookUrl: String = "",
+    val author: String = "",
+    val cover: String = "",
+    /** 读到的位置：local 是段落下标，online 是章节下标（0 起）。 */
     val lastIndex: Int = 0,
+    /** local：段落总数；online：章节总数。 */
     val lastParagraphTotal: Int = 0,
 )
 
@@ -77,6 +85,32 @@ class BookStore(private val context: Context) {
                 addedAt = System.currentTimeMillis(),
                 lastIndex = existing.books.firstOrNull { it.uri == uri }?.lastIndex ?: 0,
                 lastParagraphTotal = existing.books.firstOrNull { it.uri == uri }?.lastParagraphTotal ?: 0,
+            ),
+        )
+        context.bookDataStore.edit { prefs -> prefs[booksKey] = json.encodeToString(BookStoreData.serializer(), updated) }
+        return id
+    }
+
+    /** 导入一本在线书（书城点开时）；同一落地页重复添加只更新信息并保留进度。返回书籍 id。 */
+    suspend fun addOnlineBook(book: OnlineBook): String {
+        val existing = data.firstOrNull() ?: BookStoreData()
+        val id = existing.books
+            .firstOrNull { it.kind == "online" && it.bookUrl == book.bookUrl }?.id
+            ?: UUID.randomUUID().toString()
+        val previous = existing.books.firstOrNull { it.id == id }
+        val updated = existing.copy(
+            books = existing.books.filterNot { it.id == id } + Book(
+                id = id,
+                name = book.name,
+                uri = book.bookUrl,
+                addedAt = previous?.addedAt ?: System.currentTimeMillis(),
+                kind = "online",
+                sourceKey = book.sourceKey,
+                bookUrl = book.bookUrl,
+                author = book.author ?: "",
+                cover = book.cover ?: "",
+                lastIndex = previous?.lastIndex ?: 0,
+                lastParagraphTotal = previous?.lastParagraphTotal ?: 0,
             ),
         )
         context.bookDataStore.edit { prefs -> prefs[booksKey] = json.encodeToString(BookStoreData.serializer(), updated) }
