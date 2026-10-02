@@ -22,9 +22,10 @@ sealed interface MediaLink {
     val url: String
 
     /**
-     * B站视频或番剧。
+     * B站视频、番剧或图集。
      *
-     * 普通投稿用 [bvid]（或老的 [aid]），番剧用 [epId] / [ssId]；
+     * 普通投稿用 [bvid]（或老的 [aid]），番剧用 [epId] / [ssId]，
+     * **图文动态用 [opusId]、专栏用 [cvId]**；
      * 短链（b23.tv）刚拿到时这些都还是空的，要跟一次跳转才知道。
      */
     data class Bilibili(
@@ -33,6 +34,10 @@ sealed interface MediaLink {
         val aid: Long? = null,
         val epId: Long? = null,
         val ssId: Long? = null,
+        /** 图文动态的 id（`www.bilibili.com/opus/{id}` 或 `t.bilibili.com/{id}`）。 */
+        val opusId: Long? = null,
+        /** 专栏 id（`www.bilibili.com/read/cv{id}`）。 */
+        val cvId: Long? = null,
         /** `?p=2` 里的分P，从 1 开始。 */
         val page: Int = 1,
     ) : MediaLink {
@@ -67,6 +72,12 @@ private val BV_PATTERN = Regex("""/video/(BV[0-9A-Za-z]{10})""")
 private val AV_PATTERN = Regex("""/video/av(\d+)""", RegexOption.IGNORE_CASE)
 private val EP_PATTERN = Regex("""/bangumi/play/ep(\d+)""", RegexOption.IGNORE_CASE)
 private val SS_PATTERN = Regex("""/bangumi/play/ss(\d+)""", RegexOption.IGNORE_CASE)
+
+/** 图文动态：`/opus/{id}`；老分享域 t.bilibili.com 直接用 `/{id}`，见 [parseBilibiliUrl]。 */
+private val OPUS_PATTERN = Regex("""/opus/(\d+)""")
+
+/** 专栏：`/read/cv{id}`。 */
+private val CV_PATTERN = Regex("""/read/cv(\d+)""", RegexOption.IGNORE_CASE)
 
 private val AWEME_ID_PATTERNS = listOf(
     Regex("""/(?:share/)?video/(\d{5,})"""),
@@ -107,12 +118,21 @@ fun detectShareLink(text: String): MediaLink? {
 internal fun parseBilibiliUrl(url: String): MediaLink.Bilibili {
     val path = pathOf(url)
     val query = queryOf(url)
+    val host = hostOf(url).orEmpty()
+    // t.bilibili.com/{id} 就是动态的老分享域，路径本身只有一串数字
+    val legacyDynamic = if (host == "t.bilibili.com" || host.endsWith(".t.bilibili.com")) {
+        Regex("""^/(\d{5,})/?""").find(path)?.groupValues?.get(1)?.toLongOrNull()
+    } else {
+        null
+    }
     return MediaLink.Bilibili(
         url = url,
         bvid = BV_PATTERN.find(path)?.groupValues?.get(1),
         aid = AV_PATTERN.find(path)?.groupValues?.get(1)?.toLongOrNull(),
         epId = EP_PATTERN.find(path)?.groupValues?.get(1)?.toLongOrNull(),
         ssId = SS_PATTERN.find(path)?.groupValues?.get(1)?.toLongOrNull(),
+        opusId = OPUS_PATTERN.find(path)?.groupValues?.get(1)?.toLongOrNull() ?: legacyDynamic,
+        cvId = CV_PATTERN.find(path)?.groupValues?.get(1)?.toLongOrNull(),
         page = queryParam(query, "p")?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
     )
 }

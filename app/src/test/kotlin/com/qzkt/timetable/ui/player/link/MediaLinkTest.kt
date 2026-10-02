@@ -59,6 +59,19 @@ class MediaLinkTest {
     }
 
     @Test
+    fun `图文动态与专栏链接`() {
+        val opus = detectShareLink("https://www.bilibili.com/opus/755822555336540166") as MediaLink.Bilibili
+        assertEquals(755822555336540166L, opus.opusId)
+
+        // t.bilibili.com 是动态的老分享域：路径本身只有一串数字
+        val legacy = detectShareLink("https://t.bilibili.com/755822555336540166?tab=2") as MediaLink.Bilibili
+        assertEquals(755822555336540166L, legacy.opusId)
+
+        val cv = detectShareLink("https://www.bilibili.com/read/cv43606912") as MediaLink.Bilibili
+        assertEquals(43606912L, cv.cvId)
+    }
+
+    @Test
     fun `抖音的几种地址`() {
         val short = detectShareLink("7.68 复制打开抖音，看看【某某】的作品 https://v.douyin.com/iRabcdef/") as MediaLink.Douyin
         assertNull(short.awemeId)

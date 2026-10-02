@@ -25,6 +25,9 @@ class BilibiliResolverTest {
     /** 让 playurl 回多条 durl（长视频被切段）或者只回 dash。 */
     private var playUrlMode = "single"
 
+    /** 动态详情接口回哪种内容：draw（图文）/ article（转发专栏）/ empty（纯文字）。 */
+    private var opusMode = "draw"
+
     /** 让 view 接口回一页 HTML —— 风控 / 需要验证时真机上就是这个表现。 */
     private var htmlInsteadOfJson = false
 
@@ -137,6 +140,78 @@ class BilibiliResolverTest {
         assertTrue(error.message!!.contains("DASH"))
     }
 
+    @Test
+    fun `图文动态返回图片列表`() = runBlocking {
+        val media = resolver().resolve(
+            MediaLink.Bilibili(url = "$base/opus/755822555336540166", opusId = 755822555336540166L),
+        )
+        assertEquals("", media.url)   // 图集不放播放地址，界面按图集展示
+        assertEquals(
+            listOf("https://i0.hdslb.com/bfs/new_dyn/a.png", "https://i0.hdslb.com/bfs/new_dyn/b.jpg"),
+            media.images,
+        )
+        assertEquals("新返图", media.title)
+        assertEquals("葱油饼er", media.author)
+        assertEquals(1722173701L, media.publishTime)
+        assertTrue(seenPaths.contains("/x/polymer/web-dynamic/v1/detail"))
+    }
+
+    /** 「转发专栏」型动态本身没有图片，图片在链接的专栏里 —— 要再拉一次专栏接口。 */
+    @Test
+    fun `转发专栏型动态落到专栏里拿图`() = runBlocking {
+        opusMode = "article"
+        val media = resolver().resolve(
+            MediaLink.Bilibili(url = "$base/opus/1132111305778397224", opusId = 1132111305778397224L),
+        )
+        assertEquals(listOf("https://i0.hdslb.com/bfs/article/a.jpg"), media.images)
+        assertEquals("白金攻略", media.title)
+        assertEquals("李卡农", media.author)
+        assertTrue(seenPaths.contains("/x/article/view"))
+    }
+
+    @Test
+    fun `文字动态没有图时明确报错`() = runBlocking {
+        opusMode = "empty"
+        val error = runCatching {
+            resolver().resolve(MediaLink.Bilibili(url = "$base/opus/1", opusId = 1L))
+        }.exceptionOrNull() as LinkResolveException
+        assertTrue(error.message!!.contains("没有图片"))
+    }
+
+    /** 实测有的动态给 http 地址（i0.hdslb.com），统一升级成 https。 */
+    @Test
+    fun `动态图片的http地址会升级成https`() {
+        val post = parseDynamicPost(
+            """{"code":0,"data":{"item":{"modules":{"module_dynamic":{"major":{"draw":{"items":[""" +
+                """{"src":"http://i0.hdslb.com/a.png"},{"src":"//i0.hdslb.com/b.jpg"}]}}}}}}}""",
+        )
+        assertEquals(listOf("https://i0.hdslb.com/a.png", "https://i0.hdslb.com/b.jpg"), post.images)
+    }
+
+    /** 新版 opus 样式的动态图片在 major.opus.pics[].url。 */
+    @Test
+    fun `opus样式动态从pics取图`() {
+        val post = parseDynamicPost(
+            """{"code":0,"data":{"item":{"modules":{"module_dynamic":{"major":{"opus":""" +
+                """{"title":"标题","pics":[{"url":"https://i0.hdslb.com/p.png"}]}}}}}}}""",
+        )
+        assertEquals(listOf("https://i0.hdslb.com/p.png"), post.images)
+        assertEquals("标题", post.title)
+    }
+
+    @Test
+    fun `专栏解析图片列表`() {
+        val post = parseArticle(
+            """{"code":0,"data":{"title":"攻略","publish_time":1722173701,"author":{"name":"作者"},""" +
+                """"image_urls":["https://i0.hdslb.com/bfs/article/a.jpg"],"summary":"摘要"}}""",
+        )
+        assertEquals(listOf("https://i0.hdslb.com/bfs/article/a.jpg"), post.images)
+        assertEquals("攻略", post.title)
+        assertEquals("作者", post.author)
+        assertEquals(1722173701L, post.publishTime)
+        assertEquals("摘要", post.description)
+    }
+
     // ------------------------------------------------------------------ 假服务端
 
     private fun handle(exchange: HttpExchange) {
@@ -167,6 +242,13 @@ class BilibiliResolverTest {
                 }
             }
             "/x/player/playurl" -> json(exchange, playUrlBody())
+            "/x/polymer/web-dynamic/v1/detail" -> json(exchange, dynamicBody())
+            "/x/article/view" -> json(
+                exchange,
+                """{"code":0,"data":{"title":"白金攻略","publish_time":1722173701,""" +
+                    """"author":{"name":"李卡农"},"image_urls":["https://i0.hdslb.com/bfs/article/a.jpg"],""" +
+                    """"summary":"感谢使用"}}""",
+            )
             "/pgc/view/web/season" -> json(
                 exchange,
                 """{"code":0,"message":"success","result":{"title":"测试番剧","episodes":[""" +
@@ -182,6 +264,17 @@ class BilibiliResolverTest {
             """{"order":1,"url":"$base/media/video-1.mp4"},{"order":2,"url":"$base/media/video-2.mp4"}]}}"""
         "dash" -> """{"code":0,"message":"0","data":{"quality":80,"dash":{"video":[{"id":80}]}}}"""
         else -> """{"code":0,"message":"0","data":{"quality":64,"durl":[{"order":1,"url":"$base/media/video.mp4"}]}}"""
+    }
+
+    private fun dynamicBody(): String = when (opusMode) {
+        "article" -> """{"code":0,"data":{"item":{"type":"DYNAMIC_TYPE_ARTICLE","modules":""" +
+            """{"module_dynamic":{"major":{"article":{"id":43606912,"title":"攻略补充资料"}}}}}}}"""
+        "empty" -> """{"code":0,"data":{"item":{"type":"DYNAMIC_TYPE_WORD","modules":{"module_dynamic":{}}}}}"""
+        else -> """{"code":0,"data":{"item":{"type":"DYNAMIC_TYPE_DRAW","modules":""" +
+            """{"module_author":{"name":"葱油饼er","pub_ts":1722173701},""" +
+            """"module_dynamic":{"desc":{"text":"新返图"},"major":{"draw":{"items":[""" +
+            """{"src":"https://i0.hdslb.com/bfs/new_dyn/a.png"},""" +
+            """{"src":"https://i0.hdslb.com/bfs/new_dyn/b.jpg"}]}}}}}}}"""
     }
 
     private fun redirect(exchange: HttpExchange, location: String) {

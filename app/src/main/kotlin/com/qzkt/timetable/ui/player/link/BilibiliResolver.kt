@@ -54,8 +54,58 @@ class BilibiliResolver(
         )
         ensureBuvid(headers)
         val target = if (link.hasId()) link else followShortLink(link, headers)
-        return if (target.epId != null || target.ssId != null) resolveBangumi(target, headers)
-        else resolveVideo(target, headers)
+        return when {
+            target.epId != null || target.ssId != null -> resolveBangumi(target, headers)
+            target.opusId != null -> resolveOpus(target.opusId, headers)
+            target.cvId != null -> resolveArticle(target.cvId, headers)
+            else -> resolveVideo(target, headers)
+        }
+    }
+
+    /**
+     * 图文动态（图集）：走 `x/polymer/web-dynamic/v1/detail`，图片在
+     * `major.draw.items[].src`（新版是 `major.opus.pics[].url`）。
+     * 「转发专栏」型动态本身没有图片，图片在链接的专栏里 —— 拿到 [BiliImagePost.articleId]
+     * 后再去专栏接口捞一次。
+     */
+    private fun resolveOpus(opusId: Long, headers: Map<String, String>): ResolvedMedia {
+        val post = parseDynamicPost(client.fetch("$apiBase/x/polymer/web-dynamic/v1/detail?id=$opusId", headers).body)
+        if (post.images.isEmpty() && post.articleId != null) {
+            return resolveArticle(post.articleId, headers, fallbackTitle = post.title)
+        }
+        if (post.images.isEmpty()) {
+            throw LinkResolveException("这条 B站动态里没有图片" + (post.title?.let { "（$it）" } ?: ""))
+        }
+        return ResolvedMedia(
+            url = "",   // 图集不放播放地址，界面按图集展示
+            title = post.title ?: "B站图集",
+            headers = emptyMap(),
+            platform = MediaPlatform.BILIBILI,
+            description = post.description,
+            publishTime = post.publishTime,
+            author = post.author,
+            cover = post.images.first(),
+            images = post.images,
+        )
+    }
+
+    /** 专栏（`read/cv{id}`）：图片在 `x/article/view` 的 `image_urls` 里。 */
+    private fun resolveArticle(cvId: Long, headers: Map<String, String>, fallbackTitle: String? = null): ResolvedMedia {
+        val post = parseArticle(client.fetch("$apiBase/x/article/view?id=$cvId", headers).body)
+        if (post.images.isEmpty()) {
+            throw LinkResolveException("这篇专栏里没有图片" + (post.title?.let { "（$it）" } ?: ""))
+        }
+        return ResolvedMedia(
+            url = "",
+            title = post.title ?: fallbackTitle ?: "B站专栏",
+            headers = emptyMap(),
+            platform = MediaPlatform.BILIBILI,
+            description = post.description,
+            publishTime = post.publishTime,
+            author = post.author,
+            cover = post.images.first(),
+            images = post.images,
+        )
     }
 
     /**
@@ -103,12 +153,14 @@ class BilibiliResolver(
         return if (value.isBlank()) this else this + ("Cookie" to value)
     }
 
-    /** b23.tv 这种短链跟一次跳转，跳到的地址里才有 BV / av / ep。 */
+    /** b23.tv 这种短链跟一次跳转，跳到的地址里才有 BV / av / ep / opus / cv。 */
     private fun followShortLink(link: MediaLink.Bilibili, headers: Map<String, String>): MediaLink.Bilibili {
         val response = client.fetch(link.url, headers)
         val jumped = parseBilibiliUrl(response.finalUrl)
         if (jumped.hasId()) return jumped
-        throw LinkResolveException("这个 B站链接里没有视频（BV/av）或番剧（ep/ss）信息（HTTP " + response.code + "）")
+        throw LinkResolveException(
+            "这个 B站链接里没有视频（BV/av）、番剧（ep/ss）、图文动态（opus）或专栏（cv）信息（HTTP " + response.code + "）",
+        )
     }
 
     private fun resolveVideo(link: MediaLink.Bilibili, headers: Map<String, String>): ResolvedMedia {
@@ -216,7 +268,7 @@ class BilibiliResolver(
     }
 
     private fun MediaLink.Bilibili.hasId(): Boolean =
-        bvid != null || aid != null || epId != null || ssId != null
+        bvid != null || aid != null || epId != null || ssId != null || opusId != null || cvId != null
 
     private companion object {
         /**
@@ -395,8 +447,98 @@ private fun checkBiliCode(root: JSONObject) {
             -403 -> "B站：接口拒绝访问，可能需要登录后再试（$message）"
             -400 -> "B站：请求不对（$message）"
             -412 -> "B站：请求被风控拦了，稍后再试（$message）"
+            -509 -> "B站：请求过于频繁，过一会儿再试（$message）"
+            4101152 -> "B站：这条动态不存在或已被删除"
             else -> "B站接口返回错误：$message"
         },
+    )
+}
+
+/** B站图片地址可能是 http（实测有的图文动态给的就是 http://）或协议相对，统一补成 https。 */
+internal fun normalizeBiliImageUrl(raw: String): String {
+    val text = raw.trim()
+    return when {
+        text.startsWith("//") -> "https:$text"
+        text.startsWith("http://", ignoreCase = true) -> "https://" + text.substring(7)
+        else -> text
+    }
+}
+
+/** 一条带图的 B站内容（图文动态 / 专栏）。 */
+internal data class BiliImagePost(
+    val title: String?,
+    val images: List<String>,
+    val author: String? = null,
+    val publishTime: Long? = null,
+    val description: String? = null,
+    /** 转发专栏型动态：图片在专栏里，需要再拉一次专栏接口。 */
+    val articleId: Long? = null,
+)
+
+/**
+ * 解析图文动态（`x/polymer/web-dynamic/v1/detail`）。
+ *
+ * 图片位置随类型不同：图文动态在 `major.draw.items[].src`，
+ * 新版 opus 样式的在 `major.opus.pics[].url`；
+ * 「转发专栏」型（major.article）没有图片，把专栏 id 带出去让调用方再拉。
+ */
+internal fun parseDynamicPost(json: String): BiliImagePost {
+    val root = jsonOf(json, "B站动态接口")
+    checkBiliCode(root)
+    val item = root.optJSONObject("data")?.optJSONObject("item")
+        ?: throw LinkResolveException("B站没有返回动态内容")
+    val modules = item.optJSONObject("modules")
+    val dynamic = modules?.optJSONObject("module_dynamic")
+    val major = dynamic?.optJSONObject("major")
+    val article = major?.optJSONObject("article")
+
+    val images = buildList {
+        major?.optJSONObject("draw")?.optJSONArray("items")?.let { array ->
+            for (index in 0 until array.length()) {
+                array.optJSONObject(index)?.optString("src")?.takeIf { it.isNotBlank() }?.let { add(it) }
+            }
+        }
+        if (isEmpty()) {
+            major?.optJSONObject("opus")?.optJSONArray("pics")?.let { array ->
+                for (index in 0 until array.length()) {
+                    array.optJSONObject(index)?.optString("url")?.takeIf { it.isNotBlank() }?.let { add(it) }
+                }
+            }
+        }
+    }.map(::normalizeBiliImageUrl)
+
+    val descText = dynamic?.optJSONObject("desc")?.optString("text")?.trim().orEmpty()
+    val title = major?.optJSONObject("opus")?.optString("title")?.trim()?.ifBlank { null }
+        ?: article?.optString("title")?.trim()?.ifBlank { null }
+        ?: descText.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(50)?.ifBlank { null }
+
+    return BiliImagePost(
+        title = title,
+        images = images,
+        author = modules?.optJSONObject("module_author")?.optString("name")?.trim()?.ifBlank { null },
+        publishTime = modules?.optJSONObject("module_author")?.optLong("pub_ts", 0L)?.takeIf { it > 0 },
+        description = descText.ifBlank {
+            article?.optString("desc")?.trim().orEmpty()
+        }.ifBlank { null },
+        articleId = article?.optLong("id", 0L)?.takeIf { it > 0 },
+    )
+}
+
+/** 解析专栏（`x/article/view`）：图片就是 `image_urls` 列表。 */
+internal fun parseArticle(json: String): BiliImagePost {
+    val root = jsonOf(json, "B站专栏接口")
+    checkBiliCode(root)
+    val data = root.optJSONObject("data") ?: throw LinkResolveException("B站没有返回专栏内容")
+    val images = (data.optJSONArray("image_urls") ?: data.optJSONArray("origin_image_urls"))?.let { array ->
+        (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }
+    }.orEmpty().map(::normalizeBiliImageUrl)
+
+    return BiliImagePost(
+        title = data.optString("title").trim().ifBlank { null },
+        images = images,
+        author = data.optJSONObject("author")?.optString("name")?.trim()?.ifBlank { null },
+        publishTime = data.optLong("publish_time", 0L).takeIf { it > 0 },
+        description = data.optString("summary").trim().ifBlank { null },
     )
 }
 
