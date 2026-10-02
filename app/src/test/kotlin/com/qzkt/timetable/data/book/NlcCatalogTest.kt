@@ -2,6 +2,7 @@ package com.qzkt.timetable.data.book
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -47,6 +48,34 @@ class NlcCatalogTest {
         assertEquals("978-7-5699-5162-2 CNY98.00", record.isbn)
         assertEquals("图书", record.format)   // BK 翻成中文
         assertTrue(record.detailUrl!!.startsWith("http://opac.nlc.cn"))
+    }
+
+    @Test
+    fun `会话页里抠出真正的检索地址`() {
+        // 新会话时 Aleph 先回的一页：真正的结果在 meta refresh / var tmp 指的地方
+        val sessionPage = """
+            <html><head>
+            <META HTTP-EQUIV="REFRESH" CONTENT="0; URL=http://opac.nlc.cn:80/F/ABC123-12345?func=find-b&amp;find_code=WRD&amp;request=%E7%BA%A2">
+            <script>var tmp="http://opac.nlc.cn:80/F/ABC123-12346";</script>
+            </head><body>正在建立会话…</body></html>
+        """.trimIndent()
+
+        assertEquals(
+            "http://opac.nlc.cn:80/F/ABC123-12345?func=find-b&find_code=WRD&request=%E7%BA%A2",
+            extractSessionUrl(sessionPage),
+        )
+    }
+
+    @Test
+    fun `注销链接不会被当成会话地址`() {
+        val page = """<META HTTP-EQUIV="REFRESH" CONTENT="1200; URL=http://opac.nlc.cn:80/F/ABC-1?func=logout">"""
+        assertNull(extractSessionUrl(page))
+    }
+
+    @Test
+    fun `结果页和空壳页要能区分`() {
+        assertTrue(isResultPage(fixture()))
+        assertFalse(isResultPage("<html><body>正在建立会话</body></html>"))
     }
 
     @Test
