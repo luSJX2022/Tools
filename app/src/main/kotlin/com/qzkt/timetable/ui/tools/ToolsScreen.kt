@@ -49,6 +49,8 @@ import java.time.LocalDate
 fun ToolsScreen(
     snapshot: TimetableSnapshot,
     animeFavoriteCount: Int = 0,
+    /** 还没配置教务账号时，课表入口直接说清楚要先去配置。 */
+    configured: Boolean = true,
     onOpenTimetable: () -> Unit,
     onOpenResolve: () -> Unit = {},
     onOpenBooks: () -> Unit = {},
@@ -69,11 +71,13 @@ fun ToolsScreen(
             ToolEntry(
                 icon = Icons.Default.CalendarMonth,
                 title = "课表",
-                subtitle = if (snapshot.firstMonday.isBlank()) {
-                    "还没设置开学日期，点进去补上"
-                } else {
-                    val weeks = if (snapshot.weekCount > 0) " · 共 ${snapshot.weekCount} 周" else ""
-                    "第 $currentWeek 周$weeks"
+                subtitle = when {
+                    !configured -> "还没配置教务账号，点进去配置"
+                    snapshot.firstMonday.isBlank() -> "还没设置开学日期，点进去补上"
+                    else -> {
+                        val weeks = if (snapshot.weekCount > 0) " · 共 ${snapshot.weekCount} 周" else ""
+                        "第 $currentWeek 周$weeks"
+                    }
                 },
                 onClick = onOpenTimetable,
             )

@@ -78,7 +78,6 @@ private fun LocalReader(book: Book, viewModel: BookViewModel, onBack: () -> Unit
 
     var text by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
-    var menuOpen by remember { mutableStateOf(false) }
     var lastIndex by remember { mutableIntStateOf(book.lastIndex) }
 
     val bgColor = if (night) Color(0xFF121212) else MaterialTheme.colorScheme.background
@@ -124,8 +123,6 @@ private fun LocalReader(book: Book, viewModel: BookViewModel, onBack: () -> Unit
     ReaderScaffold(
         title = book.name,
         night = night,
-        menuOpen = menuOpen,
-        onToggleMenu = { menuOpen = !menuOpen },
         onBack = onBack,
         bottomBar = {
             TextButton(onClick = { viewModel.setFontSize(fontSize - 1) }) { Text("A-", color = textColor) }
@@ -143,18 +140,22 @@ private fun LocalReader(book: Book, viewModel: BookViewModel, onBack: () -> Unit
         },
     ) { padding ->
         when {
-            text == null && loadError == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            text == null && loadError == null -> Box(
+                Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) {
                 CircularProgressIndicator()
             }
             loadError != null -> Text(
                 text = "打不开这本书：$loadError",
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                modifier = Modifier.align(Alignment.Center).padding(padding).padding(24.dp),
             )
             else -> LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 24.dp),
+                // 顶栏 / 底栏现在常驻，正文按它们的高度留出空间，别被压住
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 12.dp),
             ) {
                 items(paragraphs.size) { index ->
                     val paragraph = paragraphs[index]
@@ -168,7 +169,6 @@ private fun LocalReader(book: Book, viewModel: BookViewModel, onBack: () -> Unit
                 }
             }
         }
-        padding
     }
 }
 
@@ -185,7 +185,6 @@ private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Uni
     var content by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableIntStateOf(0) }
-    var menuOpen by remember { mutableStateOf(false) }
     var showCatalog by remember { mutableStateOf(false) }
     var lastIndex by remember { mutableIntStateOf(book.lastIndex) }
 
@@ -218,8 +217,6 @@ private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Uni
     ReaderScaffold(
         title = book.name,
         night = night,
-        menuOpen = menuOpen,
-        onToggleMenu = { menuOpen = !menuOpen },
         onBack = onBack,
         bottomBar = {
             val chapterCount = chapters?.size ?: 0
@@ -243,10 +240,13 @@ private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Uni
     ) { padding ->
         when {
             (content == null || chapters == null) && loadError == null ->
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                Box(
+                    Modifier.fillMaxSize().padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
 
             loadError != null -> Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
+                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
             ) {
@@ -255,8 +255,9 @@ private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Uni
             }
 
             else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 24.dp),
+                // 顶栏 / 底栏常驻，正文按它们的高度留出空间
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 12.dp),
             ) {
                 if (chapterTitle.isNotBlank()) {
                     item {
@@ -281,7 +282,6 @@ private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Uni
                 }
             }
         }
-        padding
     }
 
     if (showCatalog) {
@@ -320,13 +320,20 @@ private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Uni
 
 // ---------- 共用骨架 ----------
 
-/** 阅读页骨架：背景 + 内容 + 可开关的顶栏 / 底栏。 */
+/** 操作条高度：正文按它上下留白（IconButton 默认 48dp）。 */
+private val READER_BAR_HEIGHT = 48.dp
+
+/**
+ * 阅读页骨架：背景 + 正文 + **常驻的**顶栏 / 底栏。
+ *
+ * 以前两条操作条要靠点屏幕中间呼出、再点收回。现在阅读页不再挂 App 的
+ * 「工具 / 设置」页签（见 QzktApp 的 showBottomBar），底部这一行就是阅读时唯一的
+ * 操作入口（上一章 / 目录 / 下一章），藏起来用户根本找不到 —— 所以改成常驻。
+ */
 @Composable
 private fun ReaderScaffold(
     title: String,
     night: Boolean,
-    menuOpen: Boolean,
-    onToggleMenu: () -> Unit,
     onBack: () -> Unit,
     bottomBar: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
     content: @Composable androidx.compose.foundation.layout.BoxScope.(padding: androidx.compose.foundation.layout.PaddingValues) -> Unit,
@@ -336,52 +343,40 @@ private fun ReaderScaffold(
     val bgColor = if (night) Color(0xFF121212) else MaterialTheme.colorScheme.background
 
     Box(modifier = Modifier.fillMaxSize().background(bgColor)) {
-        content(androidx.compose.foundation.layout.PaddingValues(0.dp))
+        content(
+            androidx.compose.foundation.layout.PaddingValues(
+                top = READER_BAR_HEIGHT + 6.dp,
+                bottom = READER_BAR_HEIGHT + 6.dp,
+            ),
+        )
 
-        if (menuOpen) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(barColor)
-                    .align(Alignment.TopCenter),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = textColor)
-                }
-                Text(
-                    text = title,
-                    color = textColor,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(end = 16.dp),
-                )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(barColor)
+                .align(Alignment.TopCenter),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = textColor)
             }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(barColor)
-                    .align(Alignment.BottomCenter),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                bottomBar()
-            }
+            Text(
+                text = title,
+                color = textColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 16.dp),
+            )
         }
 
-        // 点屏幕中间呼出 / 收起操作条（透明点击区，不碰正文的滚动）
-        if (!menuOpen) {
-            val centerInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .clickable(
-                        interactionSource = centerInteraction,
-                        indication = null,
-                        onClick = onToggleMenu,
-                    )
-                    .padding(horizontal = 70.dp, vertical = 140.dp),
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(barColor)
+                .align(Alignment.BottomCenter),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            bottomBar()
         }
     }
 }

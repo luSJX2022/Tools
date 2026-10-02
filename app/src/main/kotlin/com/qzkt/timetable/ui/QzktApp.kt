@@ -19,7 +19,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -127,209 +126,227 @@ fun QzktApp(
         }
     }
 
-    // configured 只会从 false 变成 true 一次，所以重建导航栈只会发生一次（配置完成时）
-    key(settings.configured) {
-        val navController = rememberNavController()
-        val backStackEntry by navController.currentBackStackEntryAsState()
-        val currentRoute = backStackEntry?.destination?.route
-        val showBottomBar = settings.configured && currentRoute != Routes.DEBUG &&
-            currentRoute != Routes.SETUP && currentRoute != Routes.WEB &&
-            !(currentRoute == Routes.PLAYER && playerFullscreen)
+    // 导航栈不随 configured 重建：首次启动直接落到工具页，配置教务账号是从课表页进去的
+    // （配置成功后由 Routes.SETUP 那段自己退回上一页，见下面的 LaunchedEffect）。
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    // 底部页签一直显示：以前没配置时是「向导优先」的全屏流程，现在首次启动也直接进主页。
+    // 阅读页例外：那里底部要留给「上一章 / 目录 / 下一章」，App 的页签不跟它抢地方。
+    val showBottomBar = currentRoute != Routes.DEBUG &&
+        currentRoute != Routes.SETUP && currentRoute != Routes.WEB &&
+        currentRoute != Routes.BOOK_READ &&
+        !(currentRoute == Routes.PLAYER && playerFullscreen)
 
-        Scaffold(
-            bottomBar = {
-                if (showBottomBar) {
-                    NavigationBar {
-                        TABS.forEach { tab ->
-                            // 课表 / 播放器 / 它们的子页现在是从「工具」页进去的，
-                            // 停在这些页时「工具」页签保持选中，
-                            // 否则底部会出现「哪个页签都没选中」的怪状态
-                            val selected = backStackEntry?.destination?.hierarchy?.any { it.route == tab.route } == true ||
-                                (tab.route == Routes.TOOLS && currentRoute in TOOLS_SUB_PAGES)
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = {
-                                    navController.navigate(tab.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = { Icon(tab.icon, contentDescription = tab.label) },
-                                label = { Text(tab.label) },
-                            )
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    TABS.forEach { tab ->
+                        // 课表 / 播放器 / 它们的子页现在是从「工具」页进去的，
+                        // 停在这些页时「工具」页签保持选中，
+                        // 否则底部会出现「哪个页签都没选中」的怪状态
+                        val selected = backStackEntry?.destination?.hierarchy?.any { it.route == tab.route } == true ||
+                            (tab.route == Routes.TOOLS && currentRoute in TOOLS_SUB_PAGES)
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(tab.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                        )
+                    }
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHost) },
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (uiState.busy) {
+                if (uiState.progressTotal > 0) {
+                    LinearProgressIndicator(
+                        progress = { uiState.progressDone.toFloat() / uiState.progressTotal.coerceAtLeast(1) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                if (uiState.busyLabel.isNotBlank()) {
+                    Text(
+                        text = uiState.busyLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            NavHost(
+                navController = navController,
+                // 起点永远是工具页（主页）：首次使用也是先进主页，
+                // 用户进课表页之后从右上角「教务账号」去配置（课表页有引导）。
+                startDestination = Routes.TOOLS,
+                modifier = Modifier.weight(1f),
+            ) {
+                composable(Routes.SETUP) {
+                    // 配置成功后自己退回上一页（首次是从 课表 → 教务账号 → 这里进来的）。
+                    // 只认「进来时没配置、后来变成已配置」，免得已配置状态下进错页面被立刻弹走。
+                    // rememberSaveable：从「在应用内登录」那张网页页（WEB）返回时，
+                    // SETUP 会重新进组合，普通 remember 会丢，导致配置成功后不自动退回。
+                    var wasUnconfigured by rememberSaveable { mutableStateOf(!settings.configured) }
+                    LaunchedEffect(settings.configured) {
+                        if (!settings.configured) {
+                            wasUnconfigured = true
+                        } else if (wasUnconfigured) {
+                            navController.popBackStack()
                         }
                     }
-                }
-            },
-            snackbarHost = { SnackbarHost(snackbarHost) },
-        ) { padding ->
-            Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                if (uiState.busy) {
-                    if (uiState.progressTotal > 0) {
-                        LinearProgressIndicator(
-                            progress = { uiState.progressDone.toFloat() / uiState.progressTotal.coerceAtLeast(1) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
-                    if (uiState.busyLabel.isNotBlank()) {
-                        Text(
-                            text = uiState.busyLabel,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        )
-                    }
+
+                    SetupScreen(
+                        settings = settings,
+                        uiState = uiState,
+                        onTest = viewModel::saveAndTest,
+                        onImport = viewModel::saveAndImport,
+                        onSave = viewModel::saveConfig,
+                        onOpenWebImport = { navController.navigate(Routes.WEB) },
+                    )
                 }
 
-                NavHost(
-                    navController = navController,
-                    startDestination = if (settings.configured) Routes.TOOLS else Routes.SETUP,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    composable(Routes.SETUP) {
-                        SetupScreen(
-                            settings = settings,
-                            uiState = uiState,
-                            onTest = viewModel::saveAndTest,
-                            onImport = viewModel::saveAndImport,
-                            onSave = viewModel::saveConfig,
-                            onOpenWebImport = { navController.navigate(Routes.WEB) },
-                        )
-                    }
+                composable(Routes.WEB) {
+                    WebImportScreen(
+                        baseUrl = settings.baseUrl,
+                        busy = uiState.busy,
+                        lastResult = webImportResult,
+                        onBack = { navController.popBackStack() },
+                        onDocuments = viewModel::importFromHtml,
+                        onDirectFetch = viewModel::importWithSession,
+                    )
+                }
 
-                    composable(Routes.WEB) {
-                        WebImportScreen(
-                            baseUrl = settings.baseUrl,
-                            busy = uiState.busy,
-                            lastResult = webImportResult,
-                            onBack = { navController.popBackStack() },
-                            onDocuments = viewModel::importFromHtml,
-                            onDirectFetch = viewModel::importWithSession,
-                        )
-                    }
+                composable(Routes.TOOLS) {
+                    ToolsScreen(
+                        snapshot = snapshot,
+                        animeFavoriteCount = animeFavorites.size,
+                        configured = settings.configured,
+                        onOpenTimetable = { navController.navigate(Routes.TIMETABLE) },
+                        onOpenResolve = { navController.navigate(Routes.RESOLVE) },
+                        onOpenBooks = { navController.navigate(Routes.BOOK) },
+                        onOpenAnime = { navController.navigate(Routes.ANIME) },
+                    )
+                }
 
-                    composable(Routes.TOOLS) {
-                        ToolsScreen(
-                            snapshot = snapshot,
-                            animeFavoriteCount = animeFavorites.size,
-                            onOpenTimetable = { navController.navigate(Routes.TIMETABLE) },
-                            onOpenResolve = { navController.navigate(Routes.RESOLVE) },
-                            onOpenBooks = { navController.navigate(Routes.BOOK) },
-                            onOpenAnime = { navController.navigate(Routes.ANIME) },
-                        )
-                    }
+                composable(Routes.RESOLVE) {
+                    ResolveScreen(
+                        onBack = { navController.popBackStack() },
+                        onPlay = { request ->
+                            animeViewModel.playResolved(request)
+                            navController.navigate(Routes.PLAYER)
+                        },
+                    )
+                }
 
-                    composable(Routes.RESOLVE) {
-                        ResolveScreen(
-                            onBack = { navController.popBackStack() },
-                            onPlay = { request ->
-                                animeViewModel.playResolved(request)
-                                navController.navigate(Routes.PLAYER)
-                            },
-                        )
-                    }
+                composable(Routes.BOOK) {
+                    BookshelfScreen(
+                        viewModel = bookViewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenBook = { id -> navController.navigate("book_read/$id") },
+                    )
+                }
 
-                    composable(Routes.BOOK) {
-                        BookshelfScreen(
-                            viewModel = bookViewModel,
-                            onBack = { navController.popBackStack() },
-                            onOpenBook = { id -> navController.navigate("book_read/$id") },
-                        )
-                    }
+                composable(Routes.BOOK_READ) { entry ->
+                    ReaderScreen(
+                        bookId = entry.arguments?.getString("bookId").orEmpty(),
+                        viewModel = bookViewModel,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-                    composable(Routes.BOOK_READ) { entry ->
-                        ReaderScreen(
-                            bookId = entry.arguments?.getString("bookId").orEmpty(),
-                            viewModel = bookViewModel,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
+                composable(Routes.ANIME) {
+                    AnimeScreen(
+                        viewModel = animeViewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenDetail = { id -> navController.navigate("anime_detail/$id") },
+                    )
+                }
 
-                    composable(Routes.ANIME) {
-                        AnimeScreen(
-                            viewModel = animeViewModel,
-                            onBack = { navController.popBackStack() },
-                            onOpenDetail = { id -> navController.navigate("anime_detail/$id") },
-                        )
-                    }
+                composable(Routes.ANIME_DETAIL) { entry ->
+                    AnimeDetailScreen(
+                        vodId = entry.arguments?.getString("vodId").orEmpty(),
+                        viewModel = animeViewModel,
+                        onBack = { navController.popBackStack() },
+                        onPlay = { navController.navigate(Routes.PLAYER) },
+                    )
+                }
 
-                    composable(Routes.ANIME_DETAIL) { entry ->
-                        AnimeDetailScreen(
-                            vodId = entry.arguments?.getString("vodId").orEmpty(),
-                            viewModel = animeViewModel,
-                            onBack = { navController.popBackStack() },
-                            onPlay = { navController.navigate(Routes.PLAYER) },
-                        )
-                    }
+                composable(Routes.TIMETABLE) {
+                    TimetableScreen(
+                        snapshot = snapshot,
+                        settings = settings,
+                        displayWeek = displayWeek,
+                        busy = uiState.busy,
+                        onWeekChange = viewModel::showWeek,
+                        onRefresh = viewModel::refresh,
+                        onSetFirstMonday = viewModel::setFirstMonday,
+                        changeCount = changes.size,
+                        onOpenChanges = { navController.navigate(Routes.CHANGES) },
+                        onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                    )
+                }
 
-                    composable(Routes.TIMETABLE) {
-                        TimetableScreen(
-                            snapshot = snapshot,
-                            settings = settings,
-                            displayWeek = displayWeek,
-                            busy = uiState.busy,
-                            onWeekChange = viewModel::showWeek,
-                            onRefresh = viewModel::refresh,
-                            onSetFirstMonday = viewModel::setFirstMonday,
-                            changeCount = changes.size,
-                            onOpenChanges = { navController.navigate(Routes.CHANGES) },
-                            onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
-                        )
-                    }
+                composable(Routes.ACCOUNT) {
+                    AccountScreen(
+                        settings = settings,
+                        snapshot = snapshot,
+                        onUpdate = viewModel::saveSettings,
+                        onClearTimetable = viewModel::clearTimetable,
+                        onOpenDebug = { navController.navigate(Routes.DEBUG) },
+                        onBack = { navController.popBackStack() },
+                        onConfigure = { navController.navigate(Routes.SETUP) },
+                    )
+                }
 
-                    composable(Routes.ACCOUNT) {
-                        AccountScreen(
-                            settings = settings,
-                            snapshot = snapshot,
-                            onUpdate = viewModel::saveSettings,
-                            onClearTimetable = viewModel::clearTimetable,
-                            onOpenDebug = { navController.navigate(Routes.DEBUG) },
-                            onBack = { navController.popBackStack() },
-                            onReconfigure = { viewModel.saveSettings { it.copy(configured = false) } },
-                        )
-                    }
+                composable(Routes.PLAYER) {
+                    PlayerScreen(
+                        fullscreen = playerFullscreen,
+                        onFullscreenChange = { playerFullscreen = it },
+                        // 番剧页点进来的一路：PlayerScreen 组合时消费
+                        playRequest = animeViewModel.pendingPlay,
+                        onPlayRequestConsumed = { animeViewModel.consumePlayRequest() },
+                        // 播放会话放 VM 里：退出播放器再进来，选集内容还在
+                        animeSession = animeSession,
+                        onEpisodeSwitched = { animeViewModel.switchEpisode(it) },
+                    )
+                }
 
-                    composable(Routes.PLAYER) {
-                        PlayerScreen(
-                            fullscreen = playerFullscreen,
-                            onFullscreenChange = { playerFullscreen = it },
-                            // 番剧页点进来的一路：PlayerScreen 组合时消费
-                            playRequest = animeViewModel.pendingPlay,
-                            onPlayRequestConsumed = { animeViewModel.consumePlayRequest() },
-                            // 播放会话放 VM 里：退出播放器再进来，选集内容还在
-                            animeSession = animeSession,
-                            onEpisodeSwitched = { animeViewModel.switchEpisode(it) },
-                        )
-                    }
+                composable(Routes.CHANGES) {
+                    ChangesScreen(
+                        changes = changes,
+                        onClear = viewModel::clearChanges,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-                    composable(Routes.CHANGES) {
-                        ChangesScreen(
-                            changes = changes,
-                            onClear = viewModel::clearChanges,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
+                composable(Routes.SETTINGS) {
+                    SettingsScreen(
+                        settings = settings,
+                        onUpdate = viewModel::saveSettings,
+                        animeFavoriteCount = animeFavorites.size,
+                        onClearAnimeFavorites = { animeViewModel.clearFavorites() },
+                        videoSources = animeViewModel.availableSources,
+                        videoSourceKey = animeSourceKey,
+                        onSelectVideoSource = { animeViewModel.selectSource(it) },
+                    )
+                }
 
-                    composable(Routes.SETTINGS) {
-                        SettingsScreen(
-                            settings = settings,
-                            onUpdate = viewModel::saveSettings,
-                            animeFavoriteCount = animeFavorites.size,
-                            onClearAnimeFavorites = { animeViewModel.clearFavorites() },
-                            videoSources = animeViewModel.availableSources,
-                            videoSourceKey = animeSourceKey,
-                            onSelectVideoSource = { animeViewModel.selectSource(it) },
-                        )
-                    }
-
-                    composable(Routes.DEBUG) {
-                        DebugScreen(
-                            exchanges = viewModel.diagnostics,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
+                composable(Routes.DEBUG) {
+                    DebugScreen(
+                        exchanges = viewModel.diagnostics,
+                        onBack = { navController.popBackStack() },
+                    )
                 }
             }
         }

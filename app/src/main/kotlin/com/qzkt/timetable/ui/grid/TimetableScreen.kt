@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -86,6 +89,9 @@ internal fun computeCurrentWeek(snapshot: TimetableSnapshot, today: LocalDate): 
  *
  * 左右滑动切换周次。同一门课的连堂（比如 1-2 节）用绝对定位在纵向合并成一个块 ——
  * 比逐格渲染更容易处理跨行，也不会出现格子边框被撑开的问题。
+ *
+ * 还没配置账号时这里不显示空课表，而是一块引导：告诉用户去哪儿配置 —— 首次使用
+ * 不再一上来就弹配置向导（见 [com.qzkt.timetable.ui.QzktApp]）。
  *
  * 顶部栏右上角放着两个入口：**课表变动**（有变动时带角标）和**教务账号**。
  * 学期 / 作息时间表 / 课表同步 / 上课提醒 / 数据那组工具并进了教务账号页（账号信息下面），
@@ -163,33 +169,37 @@ fun TimetableScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (snapshot.firstMonday.isBlank()) {
-                NoDateAnchorBanner(onPick = { showDatePicker = true })
-            }
+            if (!settings.configured) {
+                FirstRunPanel(onConfigure = onOpenAccount)
+            } else {
+                if (snapshot.firstMonday.isBlank()) {
+                    NoDateAnchorBanner(onPick = { showDatePicker = true })
+                }
 
-            if (settings.useWebImport && !settings.hasSession) {
-                Text(
-                    text = "登录状态已失效（学校一般几小时后就会过期），课表暂时不会自动更新。点右上角的「教务账号」→「重新配置账号」，用应用内登录一次即可恢复。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                )
-            }
+                if (settings.useWebImport && !settings.hasSession) {
+                    Text(
+                        text = "登录状态已失效（学校一般几小时后就会过期），课表暂时不会自动更新。点右上角的「教务账号」→「重新配置账号」，用应用内登录一次即可恢复。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                    )
+                }
 
-            WeekHeader(snapshot = snapshot, week = displayWeek, currentWeek = currentWeek)
+                WeekHeader(snapshot = snapshot, week = displayWeek, currentWeek = currentWeek)
 
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                WeekGrid(
-                    week = page + 1,
-                    snapshot = snapshot,
-                    settings = settings,
-                    currentWeek = currentWeek,
-                    today = today,
-                    onCourseClick = { detail = it },
-                )
+                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                    WeekGrid(
+                        week = page + 1,
+                        snapshot = snapshot,
+                        settings = settings,
+                        currentWeek = currentWeek,
+                        today = today,
+                        onCourseClick = { detail = it },
+                    )
+                }
             }
         }
     }
@@ -213,6 +223,40 @@ fun TimetableScreen(
                 showDatePicker = false
             },
         )
+    }
+}
+
+@Composable
+private fun FirstRunPanel(onConfigure: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(28.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Default.AccountCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(56.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("还没有配置教务账号", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "填一次学校地址和学号，之后课表会自动导入；调课 / 停课 / 换教室也会通知你。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(18.dp))
+            Button(onClick = onConfigure) { Text("去配置教务账号") }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "也可以点右上角的「教务账号」",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

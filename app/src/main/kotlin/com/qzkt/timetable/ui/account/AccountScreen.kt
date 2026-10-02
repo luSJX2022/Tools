@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -74,6 +75,9 @@ private val REMIND_OPTIONS = listOf(5 to "5 分钟", 10 to "10 分钟", 15 to "1
  * 课表相关的那组工具（学期 / 作息时间表 / 课表同步 / 上课提醒 / 数据）原先
  * 在课表顶栏单独的「课表工具」页里，现在并到账号信息下面 —— 顶栏少一个图标，
  * 这些本来就是围着这个账号转的配置。
+ *
+ * 首次使用（`configured == false`）时这页只留「配置教务账号」这一件事：
+ * 还没连上学校，学期/同步/提醒这些设置摆出来只会让人迷惑。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,7 +88,8 @@ fun AccountScreen(
     onClearTimetable: () -> Unit,
     onOpenDebug: () -> Unit,
     onBack: () -> Unit,
-    onReconfigure: () -> Unit,
+    /** 去首次配置向导（也用在「重新配置账号」）。 */
+    onConfigure: () -> Unit,
 ) {
     var editingSlot by remember { mutableStateOf<TimeSlot?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -110,45 +115,64 @@ fun AccountScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SectionCard("账号") {
+                if (!settings.configured) {
+                    Text(
+                        text = "还没有配置教务账号",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
                 InfoRow("学校地址", settings.baseUrl.ifBlank { "未配置" })
                 InfoRow("学号", settings.username.ifBlank { "未配置" })
-                InfoRow("登录方式", if (settings.useWebImport) "应用内登录（WebView）" else "账号密码")
-                if (settings.useWebImport) {
-                    InfoRow("登录状态", if (settings.hasSession) "已登录" else "已失效，需要重新登录一次")
-                    if (settings.hasSession && settings.sessionSavedAt > 0) {
-                        InfoRow("登录时间", formatTime(settings.sessionSavedAt))
+                if (settings.configured) {
+                    InfoRow("登录方式", if (settings.useWebImport) "应用内登录（WebView）" else "账号密码")
+                    if (settings.useWebImport) {
+                        InfoRow("登录状态", if (settings.hasSession) "已登录" else "已失效，需要重新登录一次")
+                        if (settings.hasSession && settings.sessionSavedAt > 0) {
+                            InfoRow("登录时间", formatTime(settings.sessionSavedAt))
+                        }
                     }
                 }
             }
 
-            SectionCard("课表") {
-                InfoRow("学期", snapshot.xnxqh.ifBlank { "—" })
-                InfoRow("课程条数", snapshot.sessions.size.toString() + " 条")
-                InfoRow("上次同步", formatTime(snapshot.updatedAt))
+            if (settings.configured) {
+                SectionCard("课表") {
+                    InfoRow("学期", snapshot.xnxqh.ifBlank { "—" })
+                    InfoRow("课程条数", snapshot.sessions.size.toString() + " 条")
+                    InfoRow("上次同步", formatTime(snapshot.updatedAt))
+                }
             }
 
-            OutlinedButton(
-                onClick = onReconfigure,
+            Button(
+                onClick = onConfigure,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("重新配置账号") }
+            ) { Text(if (settings.configured) "重新配置账号" else "配置教务账号") }
 
             Text(
-                text = "重新配置只是回到首次配置向导改地址/学号，本地课表不会立刻删掉；" +
-                    "换学校或换账号后，记得重新导入一次课表。",
+                text = if (settings.configured) {
+                    "重新配置只是回到配置向导改地址/学号，本地课表不会立刻删掉；" +
+                        "换学校或换账号后，记得重新导入一次课表。"
+                } else {
+                    "填学校教务系统地址 + 学号，导入一次就会生成课表；" +
+                        "配好之后这里会出现学期、同步、提醒这些设置。"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            // —— 课表工具（学期 / 作息 / 同步 / 提醒 / 数据）——
+            // —— 课表工具（学期 / 作息 / 同步 / 提醒 / 数据）：配好账号才有意义 ——
 
-            TermSection(settings = settings, onUpdate = onUpdate)
-            TimeTableSection(settings = settings, onEdit = { editingSlot = it })
-            SyncSection(settings = settings, onUpdate = onUpdate)
-            ReminderSection(settings = settings, onUpdate = onUpdate)
-            DataSection(
-                onOpenDebug = onOpenDebug,
-                onClearTimetable = { confirmClear = true },
-            )
+            if (settings.configured) {
+                TermSection(settings = settings, onUpdate = onUpdate)
+                TimeTableSection(settings = settings, onEdit = { editingSlot = it })
+                SyncSection(settings = settings, onUpdate = onUpdate)
+                ReminderSection(settings = settings, onUpdate = onUpdate)
+                DataSection(
+                    onOpenDebug = onOpenDebug,
+                    onClearTimetable = { confirmClear = true },
+                )
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
