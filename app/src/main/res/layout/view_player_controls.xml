@@ -77,17 +77,37 @@
       <ImageButton android:id="@+id/exo_subtitle"
           style="@style/ExoStyledControls.Button.Bottom.CC"/>
 
-      <!-- 自定义的两个常驻入口：清晰度、选集，都排在全屏按钮左边。
-           src 用自己的图标覆盖 style 里的设置齿轮；点击监听在 PlayerScreen 膨胀后挂。 -->
-      <ImageButton android:id="@+id/player_quality"
-          style="@style/ExoStyledControls.Button.Bottom.Settings"
-          android:src="@drawable/ic_player_quality"
-          android:contentDescription="@string/player_quality_desc"/>
+      <!-- 自定义的两个常驻入口：清晰度（文案跟着实际播放的分辨率走，由 PlayerScreen 更新）、
+           选集，都排在全屏按钮左边；点击监听在 PlayerScreen 膨胀后挂。 -->
+      <TextView android:id="@+id/player_quality"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginLeft="4dp"
+          android:layout_marginRight="4dp"
+          android:gravity="center"
+          android:paddingLeft="8dp"
+          android:paddingRight="8dp"
+          android:paddingTop="14dp"
+          android:paddingBottom="14dp"
+          android:text="清晰度"
+          android:textColor="#FFFFFF"
+          android:textSize="13sp"
+          android:background="?android:attr/selectableItemBackground"/>
 
-      <ImageButton android:id="@+id/player_episodes"
-          style="@style/ExoStyledControls.Button.Bottom.Settings"
-          android:src="@drawable/ic_player_episodes"
-          android:contentDescription="@string/player_episodes_desc"/>
+      <TextView android:id="@+id/player_episodes"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginLeft="4dp"
+          android:layout_marginRight="4dp"
+          android:gravity="center"
+          android:paddingLeft="8dp"
+          android:paddingRight="8dp"
+          android:paddingTop="14dp"
+          android:paddingBottom="14dp"
+          android:text="选集"
+          android:textColor="#FFFFFF"
+          android:textSize="13sp"
+          android:background="?android:attr/selectableItemBackground"/>
 
       <ImageButton android:id="@+id/exo_fullscreen"
           style="@style/ExoStyledControls.Button.Bottom.FullScreen"/>

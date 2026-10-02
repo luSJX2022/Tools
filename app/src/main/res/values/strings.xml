@@ -3,6 +3,4 @@
     <string name="app_name">Tools</string>
     <string name="widget_label">Tools · 今日课程</string>
     <string name="widget_description">在桌面上显示今天的课程</string>
-    <string name="player_quality_desc">清晰度</string>
-    <string name="player_episodes_desc">选集</string>
 </resources>

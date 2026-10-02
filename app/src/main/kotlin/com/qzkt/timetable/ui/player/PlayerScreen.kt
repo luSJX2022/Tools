@@ -7,7 +7,7 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.view.LayoutInflater
-import android.widget.ImageButton
+import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -68,6 +69,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.media3.ui.PlayerView
@@ -135,6 +137,9 @@ fun PlayerScreen(
     var showQuality by rememberSaveable { mutableStateOf(false) }
     // 快捷手势的提示气泡（横滑快进/快退、亮度、音量拖动时显示）
     var gestureHint by remember { mutableStateOf<String?>(null) }
+    // 当前正在播的分辨率高（清晰度按钮文案 + 菜单标题用）
+    var videoHeight by remember { mutableStateOf(0) }
+    val qualityLabel = if (videoHeight > 0) "${videoHeight}P" else "清晰度"
 
     val currentName = remember(context, currentSource, resolvedTitle) {
         resolvedTitle ?: currentSource?.let { nameOf(context, it) }
@@ -238,6 +243,19 @@ fun PlayerScreen(
         onDispose { c.removeListener(listener) }
     }
 
+    // 当前播放分辨率：清晰度按钮的文案和菜单标题都跟着它走
+    DisposableEffect(controller) {
+        val c = controller ?: return@DisposableEffect onDispose { }
+        videoHeight = c.videoSize.height
+        val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                videoHeight = videoSize.height
+            }
+        }
+        c.addListener(listener)
+        onDispose { c.removeListener(listener) }
+    }
+
     // 播放器里直接换集：本地切源 + 更新会话/记进度，不用退出播放器回详情页
     fun playEpisode(index: Int) {
         val session = animeSession ?: return
@@ -262,8 +280,8 @@ fun PlayerScreen(
         useController = true
         // 重缓冲/重新准备时保留最后一帧，别闪黑屏
         setKeepContentOnPlayerReset(true)
-        findViewById<ImageButton>(R.id.player_quality)?.setOnClickListener { showQuality = true }
-        findViewById<ImageButton>(R.id.player_episodes)?.setOnClickListener { showEpisodes = true }
+        findViewById<TextView>(R.id.player_quality)?.setOnClickListener { showQuality = true }
+        findViewById<TextView>(R.id.player_episodes)?.setOnClickListener { showEpisodes = true }
         if (fullscreenButton) setFullscreenButtonClickListener { onFullscreenChange(true) }
     }
 
@@ -281,7 +299,11 @@ fun PlayerScreen(
                             PlayerGestures(this, activity, { controller }, { gestureHint = it }).attach()
                         }
                 },
-                update = { view -> view.player = controller },
+                update = { view ->
+                    view.player = controller
+                    // 清晰度按钮的文案跟着实际播放的分辨率走
+                    view.findViewById<TextView>(R.id.player_quality)?.text = qualityLabel
+                },
             )
             if (showEpisodes) {
                 EpisodesOverlay(
@@ -294,6 +316,7 @@ fun PlayerScreen(
             if (showQuality) {
                 QualityOverlay(
                     controller = controller,
+                    videoHeight = videoHeight,
                     modifier = Modifier.matchParentSize(),
                     onDismiss = { showQuality = false },
                 )
@@ -351,7 +374,11 @@ fun PlayerScreen(
                                 PlayerGestures(this, activity, { controller }, { gestureHint = it }).attach()
                             }
                     },
-                    update = { view -> view.player = controller },
+                    update = { view ->
+                        view.player = controller
+                        // 清晰度按钮的文案跟着实际播放的分辨率走
+                        view.findViewById<TextView>(R.id.player_quality)?.text = qualityLabel
+                    },
                 )
                 if (showEpisodes) {
                     EpisodesOverlay(
@@ -364,6 +391,7 @@ fun PlayerScreen(
                 if (showQuality) {
                     QualityOverlay(
                         controller = controller,
+                        videoHeight = videoHeight,
                         modifier = Modifier.matchParentSize(),
                         onDismiss = { showQuality = false },
                     )
@@ -497,25 +525,40 @@ private fun PlayerMenuHint(text: String) {
 }
 
 /**
- * 模仿 media3 设置菜单（控制条齿轮弹出的那种）的样式：暗底白字，整幅盖在画面上，
- * 点空白处收起。[modifier] 从 BoxScope 传 `Modifier.matchParentSize()`。
+ * 模仿 media3 设置菜单（控制条齿轮弹出的那种）样式的暗色面板。
+ * **不盖满画面**：面板贴在右下角，四周是一层透明的点击层（点空白收起），画面保持可见。
+ * [modifier] 从 BoxScope 传 `Modifier.matchParentSize()`（只做透明点击层）。
  */
 @Composable
 private fun PlayerMenuOverlay(title: String, modifier: Modifier = Modifier, onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    Column(
-        modifier = modifier
-            .background(Color(0xB3000000))
-            .clickable(interactionSource = interaction, indication = null, onClick = onDismiss),
+    Box(
+        modifier = modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onDismiss,
+        ),
     ) {
-        Text(
-            text = title,
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
-        content()
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 56.dp)
+                .widthIn(min = 150.dp, max = 280.dp)
+                .background(Color(0xB3000000), RoundedCornerShape(8.dp))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { /* 吃掉面板内部的点击，别落到透明遮罩上 */ },
+                ),
+        ) {
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+            content()
+        }
     }
 }
 
@@ -565,7 +608,7 @@ private fun EpisodesOverlay(
         if (episodes.isEmpty()) {
             PlayerMenuHint("当前播放没有剧集列表（播本地文件或链接时没有选集）")
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
                 itemsIndexed(episodes) { index, episode ->
                     PlayerMenuRow(
                         text = episode.label,
@@ -586,6 +629,7 @@ private fun EpisodesOverlay(
 @Composable
 private fun QualityOverlay(
     controller: Player?,
+    videoHeight: Int,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
 ) {
@@ -603,11 +647,15 @@ private fun QualityOverlay(
     }
     val currentMaxHeight = controller?.trackSelectionParameters?.maxVideoHeight ?: Int.MAX_VALUE
 
-    PlayerMenuOverlay(title = "清晰度", modifier = modifier, onDismiss = onDismiss) {
+    PlayerMenuOverlay(
+        title = if (videoHeight > 0) "清晰度 · 当前 ${videoHeight}P" else "清晰度",
+        modifier = modifier,
+        onDismiss = onDismiss,
+    ) {
         if (heights.isEmpty()) {
             PlayerMenuHint("当前播放没有可选清晰度")
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
                 val options: List<Pair<String, Int?>> = listOf("自动" to null) + heights.map { "${it}P" to it }
                 itemsIndexed(options) { _, (label, maxHeight) ->
                     val selected = if (maxHeight == null) {
