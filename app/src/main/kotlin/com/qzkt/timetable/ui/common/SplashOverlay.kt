@@ -33,6 +33,9 @@ import kotlinx.coroutines.delay
  *
  * 用「打开方式」直接进播放器时不走这段（调用方决定）。
  */
+/** 前景图里图形占可见区 50.4%，开屏时放大 2.6 倍正好填满。 */
+private const val LOGO_ZOOM = 2.6f
+
 @Composable
 fun SplashOverlay(onFinished: () -> Unit) {
     var started by remember { mutableStateOf(false) }
@@ -65,8 +68,10 @@ fun SplashOverlay(onFinished: () -> Unit) {
                     .size(150.dp)
                     .graphicsLayer {
                         this.alpha = alpha
-                        scaleX = scale
-                        scaleY = scale
+                        // 前景图里图形只占可见区的一半（那是启动器图标的比例，四周留白是给蒙版裁的），
+                        // 开屏这里把它放大到接近满框，否则 LOGO 会小得可怜。
+                        scaleX = scale * LOGO_ZOOM
+                        scaleY = scale * LOGO_ZOOM
                     },
             )
             Spacer(Modifier.height(10.dp))

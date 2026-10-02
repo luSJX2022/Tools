@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 自适应图标的底色现在是一张渐变矢量图（drawable/ic_launcher_background.xml） -->
+    <!-- 自适应图标的底色现在是一张纯色矢量图（drawable/ic_launcher_background.xml，近黑 #080707） -->
 </resources>
