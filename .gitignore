@@ -19,3 +19,4 @@ captures/
 # 其它
 *.log
 .DS_Store
+_dsh_probe.txt

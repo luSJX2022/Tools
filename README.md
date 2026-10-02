@@ -416,17 +416,50 @@ WebView 里登录 → 会话 cookie 存进设置 → 后台定时同步拿这个
   （Release 里传了 `.apk` 附件就跳浏览器下载 APK，没传就跳发布页）；
 - 仓库还没有 Release，或当前已是最新 → 明确提示。
 
-**发一版的固定流程**：
+**发一版的固定流程**（Git Bash，可整段照抄，把版本号替换掉即可）：
 
 ```bash
-# 1. 升版本号（app/build.gradle.kts 里 versionName / versionCode）
-# 2. 打包
-./gradlew :app:assembleDebug
-# 3. 提交推送
-git add -A && git commit -m "版本号升至 x.y.z" && git push
-# 4. 发 Release（tag 带 v 前缀，挂上 apk）
-gh release create vX.Y.Z Tools-vX.Y.Z.apk --title "vX.Y.Z" --notes-file notes.md
+cd /d/C/qzkt
+
+# 0) 升版本号：编辑 app/build.gradle.kts，两行都要动 ——
+#    versionCode  加 1（安卓用它判断能否覆盖安装，忘了改旧包就装不上新包）
+#    versionName  升一档（应用内检查更新显示的就是它，如 "1.0.8" → "1.0.9"）
+
+# 1) 打包（JAVA_HOME 指向项目自带 JDK，本机不用装 Java）
+export JAVA_HOME="$PWD/.toolchain/jdk-21"
+./gradlew.bat :app:assembleDebug
+
+# 2) 取出 APK，按版本号重命名（放哪个目录都行）
+cp app/build/outputs/apk/debug/app-debug.apk /d/tmp/Tools-v1.0.9.apk
+
+# 3) 写更新说明（应用内「检查更新」展示的就是这段）
+cat > /d/tmp/notes.md << 'EOF'
+- 本次改动一
+- 本次改动二
+EOF
+
+# 4) 提交推送代码（含版本号改动）
+git add -A
+git commit -m "版本号升至 1.0.9"
+git push origin main
+
+# 5) 发 Release：tag 带 v 前缀，挂上 APK
+gh release create v1.0.9 /d/tmp/Tools-v1.0.9.apk \
+  --title "v1.0.9" \
+  --notes-file /d/tmp/notes.md
 ```
+
+要点与排错：
+
+- **版本号规则**：`versionCode` 永远 +1；`versionName` 三段递增；Release 的 tag 用
+  `vX.Y.Z`（应用内检查更新按它比较新旧）。
+- **gh 没登录**：`gh auth login` 按提示走一遍（本仓库是 luSJX2022/Tools）。
+- **push 连不上**（`Connection was reset` / 连接超时）：GitHub 偶发抽风，等一两分钟
+  重试 `git push origin main` 即可，提交不会丢。
+- **旧包装不上新包**：多半是忘了升 `versionCode`。
+- **忘了挂 APK**：`gh release upload vX.Y.Z Tools-vX.Y.Z.apk` 可以事后补传。
+- 用 Android Studio 的话：Build → Build App Bundle(s) / APK(s) → Build APK(s)，
+  产物在同一路径，其余步骤相同。
 
 Release 的 `body` 会作为更新说明显示在应用内（默认折叠 4 行，可展开）。
 
