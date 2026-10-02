@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.qzkt.timetable.data.book.Book
 import com.qzkt.timetable.data.book.BookSources
+import com.qzkt.timetable.data.book.NlcRecord
 import com.qzkt.timetable.data.book.OnlineBook
 
 /** 图书工具：书架（本地 TXT）+ 书城（在线书源）。 */
@@ -71,6 +72,7 @@ fun BookshelfScreen(
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val searching by viewModel.searching.collectAsStateWithLifecycle()
     val searchError by viewModel.searchError.collectAsStateWithLifecycle()
+    val nlcState by viewModel.nlc.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf("shelf") }   // shelf：书架，store：书城
     var query by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
@@ -119,6 +121,11 @@ fun BookshelfScreen(
                     onClick = { tab = "store" },
                     label = { Text("书城") },
                 )
+                FilterChip(
+                    selected = tab == "nlc",
+                    onClick = { tab = "nlc" },
+                    label = { Text("国图") },
+                )
                 Spacer(Modifier.weight(1f))
                 if (tab == "shelf") {
                     OutlinedButton(
@@ -138,6 +145,11 @@ fun BookshelfScreen(
                     onOpenBook = { onlineBook ->
                         viewModel.addOnlineBook(onlineBook) { id -> onOpenBook(id) }
                     },
+                )
+                "nlc" -> NlcTab(
+                    state = nlcState,
+                    onSearch = { viewModel.searchNlc(it) },
+                    onTurnPage = { viewModel.nlcTurnPage(it) },
                 )
                 else -> ShelfTab(
                     books = books,
@@ -238,6 +250,145 @@ private fun StoreTab(
                 items(results, key = { it.sourceKey + it.bookUrl }) { onlineBook ->
                     OnlineBookRow(onlineBook = onlineBook, onClick = { onOpenBook(onlineBook) })
                 }
+            }
+        }
+    }
+}
+
+/** 国图检索：查国家图书馆馆藏书目，条目可跳浏览器看馆藏详情。 */
+@Composable
+private fun NlcTab(state: NlcUiState, onSearch: (String) -> Unit, onTurnPage: (Int) -> Unit) {
+    val context = LocalContext.current
+    var query by rememberSaveable { mutableStateOf("") }
+    var detail by remember { mutableStateOf<NlcRecord?>(null) }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("书名 / 作者 / 主题词", style = MaterialTheme.typography.bodySmall) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { onSearch(query) }, enabled = query.isNotBlank() && !state.loading) {
+                Text(if (state.loading) "检索中…" else "检索")
+            }
+        }
+
+        Text(
+            text = "国家图书馆馆藏检索（opac.nlc.cn）：查书目信息；电子阅读 / 借阅需在国图网站登录读者账号，这里查到后可在浏览器打开。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        when {
+            state.loading -> Box(Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            state.error != null -> Text(
+                text = "检索失败：${state.error}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            state.page > 0 && state.records.isEmpty() -> Text(
+                text = "没有检索到馆藏记录，换个关键词试试",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.records.isNotEmpty() -> {
+                Text(
+                    text = "共 ${state.total} 条 · 第 ${state.page}/${state.pageCount} 页",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    items(state.records, key = { it.docNumber }) { record ->
+                        NlcRecordRow(record = record, onClick = { detail = record })
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { onTurnPage(-1) }, enabled = state.hasPrev) { Text("上一页") }
+                    TextButton(onClick = { onTurnPage(1) }, enabled = state.hasNext) { Text("下一页") }
+                }
+            }
+        }
+    }
+
+    detail?.let { record ->
+        AlertDialog(
+            onDismissRequest = { detail = null },
+            title = { Text(record.title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOfNotNull(
+                        record.author?.let { "作者：$it" },
+                        record.publisher?.let { "出版社：$it" },
+                        record.year?.let { "年份：$it" },
+                        record.isbn?.let { "ISBN：$it" },
+                        record.format?.let { "格式：$it" },
+                        "系统号：${record.docNumber}",
+                    ).forEach { line ->
+                        Text(line, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = record.detailUrl != null,
+                    onClick = {
+                        record.detailUrl?.let { url ->
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                            }
+                        }
+                        detail = null
+                    },
+                ) { Text("在浏览器打开") }
+            },
+            dismissButton = { TextButton(onClick = { detail = null }) { Text("关闭") } },
+        )
+    }
+}
+
+@Composable
+private fun NlcRecordRow(record: NlcRecord, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = record.title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val meta = listOfNotNull(record.author, record.publisher, record.year).joinToString(" · ")
+            if (meta.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = meta,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            record.isbn?.let {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "ISBN $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
