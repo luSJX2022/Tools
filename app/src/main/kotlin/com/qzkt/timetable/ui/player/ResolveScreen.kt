@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -20,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,6 +54,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -270,6 +276,8 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    // 图集 / 图文的图片查看器：null = 关闭，非空 = 打开并定位到这一张
+    var viewerIndex by remember { mutableStateOf<Int?>(null) }
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
@@ -285,7 +293,8 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
                     .width(150.dp)
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable(enabled = media.images.isNotEmpty()) { viewerIndex = 0 },
                 contentAlignment = Alignment.Center,
             ) {
                 if (media.cover != null) {
@@ -367,7 +376,10 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
             }
             media.images.forEachIndexed { index, imageUrl ->
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp)
+                        .clickable { viewerIndex = index },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -378,7 +390,7 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
                     Text(
                         text = imageUrl,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
@@ -466,6 +478,15 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
             }
         }
 
+        // 图集 / 图文：内置查看器（点封面或任意一条图链打开，左右翻页）
+        if (viewerIndex != null && media.images.isNotEmpty()) {
+            ImageViewerDialog(
+                images = media.images,
+                initialIndex = viewerIndex ?: 0,
+                onDismiss = { viewerIndex = null },
+            )
+        }
+
         media.warning?.let { warning ->
             Spacer(Modifier.height(6.dp))
             Text(
@@ -480,6 +501,44 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             Button(onClick = onPlay, modifier = Modifier.fillMaxWidth()) {
                 Text("播放")
+            }
+        }
+    }
+}
+
+/** 全屏图片查看器：左右翻页看大图。 */
+@Composable
+private fun ImageViewerDialog(images: List<String>, initialIndex: Int, onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+            initialPage = initialIndex.coerceIn(0, (images.size - 1).coerceAtLeast(0)),
+        ) { images.size }
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+            androidx.compose.foundation.pager.HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                AsyncImage(
+                    model = images[page],
+                    contentDescription = "图 ${page + 1}",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Text(
+                text = "${pagerState.currentPage + 1}/${images.size}",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 40.dp),
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "关闭", tint = Color.White)
             }
         }
     }
