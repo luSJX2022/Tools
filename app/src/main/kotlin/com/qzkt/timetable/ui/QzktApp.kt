@@ -46,6 +46,10 @@ import com.qzkt.timetable.ui.player.ResolveScreen
 import com.qzkt.timetable.ui.settings.SettingsScreen
 import com.qzkt.timetable.ui.setup.SetupScreen
 import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
+import com.qzkt.timetable.ui.book.BookshelfScreen
+import com.qzkt.timetable.ui.book.BookViewModel
+import com.qzkt.timetable.ui.book.BookViewModelFactory
+import com.qzkt.timetable.ui.book.ReaderScreen
 import com.qzkt.timetable.ui.tools.ToolsScreen
 import com.qzkt.timetable.ui.web.WebImportScreen
 
@@ -58,6 +62,10 @@ private object Routes {
     const val ANIME = "anime"
     /** 链接解析：B站 / 抖音分享链接换真实地址后交给播放器。 */
     const val RESOLVE = "resolve"
+    /** 图书：本地 TXT 书架。 */
+    const val BOOK = "book"
+    /** 参数是书籍 id。 */
+    const val BOOK_READ = "book_read/{bookId}"
     /** 参数是资源站里的番剧 id。 */
     const val ANIME_DETAIL = "anime_detail/{vodId}"
     const val CHANGES = "changes"
@@ -74,6 +82,8 @@ private val TOOLS_SUB_PAGES = setOf(
     Routes.PLAYER,
     Routes.RESOLVE,
     Routes.ANIME,
+    Routes.BOOK,
+    Routes.BOOK_READ,
     Routes.CHANGES,
     Routes.ACCOUNT,
 )
@@ -90,6 +100,7 @@ private val TABS = listOf(
 fun QzktApp(
     viewModel: MainViewModel,
     animeViewModel: AnimeViewModel,
+    bookViewModel: BookViewModel,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
@@ -205,6 +216,7 @@ fun QzktApp(
                             animeFavoriteCount = animeFavorites.size,
                             onOpenTimetable = { navController.navigate(Routes.TIMETABLE) },
                             onOpenResolve = { navController.navigate(Routes.RESOLVE) },
+                            onOpenBooks = { navController.navigate(Routes.BOOK) },
                             onOpenAnime = { navController.navigate(Routes.ANIME) },
                         )
                     }
@@ -216,6 +228,22 @@ fun QzktApp(
                                 animeViewModel.playResolved(request)
                                 navController.navigate(Routes.PLAYER)
                             },
+                        )
+                    }
+
+                    composable(Routes.BOOK) {
+                        BookshelfScreen(
+                            viewModel = bookViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenBook = { id -> navController.navigate("book_read/$id") },
+                        )
+                    }
+
+                    composable(Routes.BOOK_READ) { entry ->
+                        ReaderScreen(
+                            bookId = entry.arguments?.getString("bookId").orEmpty(),
+                            viewModel = bookViewModel,
+                            onBack = { navController.popBackStack() },
                         )
                     }
 

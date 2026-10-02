@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,7 +40,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -256,9 +256,46 @@ fun PlayerScreen(
         onDispose { c.removeListener(listener) }
     }
 
+    // 下载当前这一路到 Movies/qzkt/（HLS / DASH 播放列表下不了，会明确提示）
+    fun downloadCurrent() {
+        val source = currentSource ?: return
+        if (downloading) return
+        if (!canDownloadDirectly(source)) {
+            downloadStatus = "这是 HLS / DASH 播放列表，需要合并分片才能成文件，这里下不了"
+            return
+        }
+        val fileName = downloadableFileName(resolvedTitle ?: currentName, source)
+        val target = runCatching { VideoDownloadStore(context).prepare(fileName) }.getOrNull()
+        if (target == null) {
+            downloadStatus = "下载失败：建不出文件"
+            return
+        }
+        scope.launch {
+            downloading = true
+            downloadProgress = null
+            downloadStatus = "正在下载 " + fileName + "…"
+            try {
+                val bytes = downloader.download(source, StreamHeaders.current, target.open()) { written, total ->
+                    // -1f 表示服务端没给总长度，用不确定进度条
+                    downloadProgress = total?.let { (written.toFloat() / it).coerceIn(0f, 1f) } ?: -1f
+                }
+                target.finish()
+                downloadStatus = "已保存到 " + target.location + "（" + readableSize(bytes) + "）"
+            } catch (e: CancellationException) {
+                target.abort()
+                throw e
+            } catch (e: Exception) {
+                target.abort()
+                downloadStatus = "下载失败：" + (e.message ?: e.toString())
+            } finally {
+                downloading = false
+                downloadProgress = null
+            }
+        }
+    }
+
     // 播放器里直接换集：本地切源 + 更新会话/记进度，不用退出播放器回详情页
-    fun playEpisode(index: Int) {
-        val session = animeSession ?: return
+    fun playEpisode(index: Int) {        val session = animeSession ?: return
         val episode = session.episodes.getOrNull(index) ?: return
         val updated = session.copy(
             url = episode.url,
@@ -349,6 +386,11 @@ fun PlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
+                actions = {
+                    IconButton(onClick = { downloadCurrent() }, enabled = currentSource != null && !downloading) {
+                        Icon(Icons.Default.Download, contentDescription = "下载到本地")
+                    }
+                },
             )
         },
     ) { padding ->
@@ -424,54 +466,6 @@ fun PlayerScreen(
                 ) {
                     Icon(Icons.Default.Shuffle, contentDescription = "随机")
                 }
-            }
-
-            // 下载单独占一行：两个带字的大按钮挤同一行时，文字会被压到竖排
-            // （真机 1080×2392 上实测如此）
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(
-                    modifier = Modifier.weight(1f),
-                    enabled = currentSource != null && !downloading,
-                    onClick = {
-                        val source = currentSource ?: return@OutlinedButton
-                        if (!canDownloadDirectly(source)) {
-                            downloadStatus = "这是 HLS / DASH 播放列表，需要合并分片才能成文件，这里下不了"
-                            return@OutlinedButton
-                        }
-                        val fileName = downloadableFileName(resolvedTitle ?: currentName, source)
-                        val target = runCatching { VideoDownloadStore(context).prepare(fileName) }.getOrNull()
-                        if (target == null) {
-                            downloadStatus = "下载失败：建不出文件"
-                            return@OutlinedButton
-                        }
-                        scope.launch {
-                            downloading = true
-                            downloadProgress = null
-                            downloadStatus = "正在下载 " + fileName + "…"
-                            try {
-                                val bytes = downloader.download(source, StreamHeaders.current, target.open()) { written, total ->
-                                    // -1f 表示服务端没给总长度，用不确定进度条
-                                    downloadProgress = total?.let { (written.toFloat() / it).coerceIn(0f, 1f) } ?: -1f
-                                }
-                                target.finish()
-                                downloadStatus = "已保存到 " + target.location + "（" + readableSize(bytes) + "）"
-                            } catch (e: CancellationException) {
-                                target.abort()
-                                throw e
-                            } catch (e: Exception) {
-                                target.abort()
-                                downloadStatus = "下载失败：" + (e.message ?: e.toString())
-                            } finally {
-                                downloading = false
-                                downloadProgress = null
-                            }
-                        }
-                    },
-                ) { Text(if (downloading) "下载中…" else "下载到本地") }
             }
 
             if (downloading) {

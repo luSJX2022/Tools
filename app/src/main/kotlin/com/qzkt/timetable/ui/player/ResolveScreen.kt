@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -54,12 +55,15 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.qzkt.timetable.data.anime.AnimePlayRequest
 import com.qzkt.timetable.ui.common.SectionCard
+import com.qzkt.timetable.ui.player.link.MediaDownloader
 import com.qzkt.timetable.ui.player.link.MediaLinkResolver
 import com.qzkt.timetable.ui.player.link.ResolvedMedia
 import com.qzkt.timetable.ui.player.link.detectShareLink
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 把用户填的流媒体地址整成能用的 URL。
@@ -263,6 +267,8 @@ fun ResolveScreen(
 /** 解析结果卡：封面 / 标题 / 作者 / 发布时间 / 播放量 / 简介 / 直链（可复制）+ 播放按钮。 */
 @Composable
 private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
@@ -389,6 +395,58 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            Spacer(Modifier.height(6.dp))
+            var galleryStatus by remember(media.images) { mutableStateOf<String?>(null) }
+            var downloadingImages by remember(media.images) { mutableStateOf(false) }
+            val galleryDownloader = remember { MediaDownloader() }
+            Button(
+                onClick = {
+                    if (downloadingImages) return@Button
+                    scope.launch {
+                        downloadingImages = true
+                        var ok = 0
+                        var fail = 0
+                        val base = (media.title ?: "抖音图集")
+                            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                            .take(40)
+                        withContext(Dispatchers.IO) {
+                            media.images.forEachIndexed { index, imageUrl ->
+                                galleryStatus = "正在下载 ${index + 1}/${media.images.size} 张…"
+                                val target = runCatching {
+                                    VideoDownloadStore(context).prepare(base + "-" + (index + 1) + ".jpg")
+                                }.getOrNull()
+                                if (target == null) {
+                                    fail++
+                                    return@forEachIndexed
+                                }
+                                try {
+                                    galleryDownloader.download(imageUrl, emptyMap(), target.open()) { _, _ -> }
+                                    target.finish()
+                                    ok++
+                                } catch (e: CancellationException) {
+                                    target.abort()
+                                    throw e
+                                } catch (e: Exception) {
+                                    target.abort()
+                                    fail++
+                                }
+                            }
+                        }
+                        galleryStatus = "完成：成功 $ok 张" + if (fail > 0) "，失败 $fail 张" else ""
+                        downloadingImages = false
+                    }
+                },
+                enabled = !downloadingImages,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (downloadingImages) "下载中…" else "下载全部图片") }
+            galleryStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         } else {
             Text("视频直链", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))

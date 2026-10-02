@@ -28,6 +28,8 @@ import com.qzkt.timetable.ui.MainViewModelFactory
 import com.qzkt.timetable.ui.QzktApp
 import com.qzkt.timetable.ui.anime.AnimeViewModel
 import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
+import com.qzkt.timetable.ui.book.BookViewModel
+import com.qzkt.timetable.ui.book.BookViewModelFactory
 import com.qzkt.timetable.ui.common.SplashOverlay
 import com.qzkt.timetable.ui.theme.QzktTheme
 import com.qzkt.timetable.ui.theme.ThemeMode
@@ -52,6 +54,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: MainViewModel = viewModel(factory = MainViewModelFactory(container))
             val animeViewModel: AnimeViewModel = viewModel(factory = AnimeViewModelFactory(container))
+            val bookViewModel: BookViewModel = viewModel(factory = BookViewModelFactory(container))
             val settings by viewModel.settings.collectAsStateWithLifecycle()
             // 开屏动画：每次正常启动来一段，旋转重建后不重播
             var showSplash by rememberSaveable { mutableStateOf(true) }
@@ -63,7 +66,7 @@ class MainActivity : ComponentActivity() {
             QzktTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        QzktApp(viewModel, animeViewModel)
+                        QzktApp(viewModel, animeViewModel, bookViewModel)
                     }
                     AnimatedVisibility(visible = showSplash, exit = fadeOut(animationSpec = tween(350))) {
                         SplashOverlay(onFinished = { showSplash = false })

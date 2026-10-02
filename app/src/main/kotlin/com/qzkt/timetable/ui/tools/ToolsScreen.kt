@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Link
@@ -50,6 +51,7 @@ fun ToolsScreen(
     animeFavoriteCount: Int = 0,
     onOpenTimetable: () -> Unit,
     onOpenResolve: () -> Unit = {},
+    onOpenBooks: () -> Unit = {},
     onOpenAnime: () -> Unit = {},
 ) {
     val today = remember { LocalDate.now() }
@@ -74,6 +76,12 @@ fun ToolsScreen(
                     "第 $currentWeek 周$weeks"
                 },
                 onClick = onOpenTimetable,
+            )
+            ToolEntry(
+                icon = Icons.AutoMirrored.Filled.MenuBook,
+                title = "图书",
+                subtitle = "本地 TXT 小说：书架、进度记忆、夜间模式",
+                onClick = onOpenBooks,
             )
             ToolEntry(
                 icon = Icons.Default.Link,
