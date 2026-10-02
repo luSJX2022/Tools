@@ -227,7 +227,8 @@ fun ResolveScreen(
             }
 
             Text(
-                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行）；普通流地址（.m3u8 / 直链）不走解析直接给直链。",
+                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行），图集会列出每张图的直链；" +
+                    "普通流地址（.m3u8 / 直链）不走解析直接给直链。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -342,21 +343,69 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
         }
 
         Spacer(Modifier.height(10.dp))
-        Text("视频直链", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+
+        if (media.images.isNotEmpty()) {
+            // 抖音图集：没有视频可播，把每张原图的直链列出来供复制保存
             Text(
-                text = media.url,
+                text = "图集（共 ${media.images.size} 张）",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(4.dp))
+            var copiedImage by remember { mutableStateOf(-1) }
+            LaunchedEffect(copiedImage) {
+                if (copiedImage >= 0) {
+                    delay(1500)
+                    copiedImage = -1
+                }
+            }
+            media.images.forEachIndexed { index, imageUrl ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "图 ${index + 1}",
+                        fontSize = 13.sp,
+                        modifier = Modifier.width(44.dp),
+                    )
+                    Text(
+                        text = imageUrl,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(imageUrl))
+                        copiedImage = index
+                    }) { Text(if (copiedImage == index) "已复制" else "复制") }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "图集作品没有视频，把图片链接复制到浏览器打开即可保存原图",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(media.url))
-                copied = true
-            }) { Text(if (copied) "已复制" else "复制") }
+        } else {
+            Text("视频直链", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = media.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(media.url))
+                    copied = true
+                }) { Text(if (copied) "已复制" else "复制") }
+            }
         }
 
         media.warning?.let { warning ->
@@ -368,9 +417,12 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
             )
         }
 
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = onPlay, modifier = Modifier.fillMaxWidth()) {
-            Text("播放")
+        // 图集没有视频可播，不放播放按钮
+        if (media.url.isNotBlank()) {
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onPlay, modifier = Modifier.fillMaxWidth()) {
+                Text("播放")
+            }
         }
     }
 }

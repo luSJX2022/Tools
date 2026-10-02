@@ -26,6 +26,8 @@ data class ResolvedMedia(
     val author: String? = null,
     /** 封面图地址。 */
     val cover: String? = null,
+    /** 图集作品的原图直链（普通视频为空）。 */
+    val images: List<String> = emptyList(),
 )
 
 /**

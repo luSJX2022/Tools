@@ -36,6 +36,8 @@ class DouyinResolver(
         ensureTtwid(userHeaders)
 
         var awemeId = link.awemeId
+        // 作品类型：普通视频 / 图集（note）/ 幻灯片（slides）—— 三者的分享页路径不一样
+        var kind = kindOf(link.url)
         var firstPage: String? = null
         if (awemeId == null) {
             val jumped = client.fetch(link.url, shareHeaders(userHeaders, MOBILE_UA))
@@ -43,13 +45,12 @@ class DouyinResolver(
             awemeId = parseDouyinUrl(jumped.finalUrl).awemeId
                 ?: firstPage?.let { awemeIdInHtml(it) }
                 ?: throw LinkResolveException("这条抖音链接里没有作品号（HTTP " + jumped.code + "）")
+            // 短链跳转后的真身路径带着类型（…/share/note/{id}/），覆盖短链上认不出来的
+            kindOf(jumped.finalUrl).takeIf { it != KIND_VIDEO }?.let { kind = it }
         }
 
-        // 分享页对 UA 挑得很：同一个作品，有的 UA 回的是带 videoInfoRes 的移动分享页，
-        // 有的（真机实测：安卓 Chrome）回的是压根没有播放信息的 web 布局页
-        // —— loaderData 里只有 video_layout / video_(id)/page，item_list 是空的。
-        // 所以挨个 UA 试，谁有地址用谁。
-        val shareUrl = "$webBase/share/video/$awemeId/"
+        // 图集（note）的分享页在 /share/note/{id}/，用 /share/video/{id}/ 去要会拿错页面
+        val shareUrl = "$webBase/share/$kind/$awemeId/"
         var lastHtml = firstPage
         USER_AGENTS.forEachIndexed { index, ua ->
             val html = (if (index == 0) firstPage else null)
@@ -94,6 +95,13 @@ class DouyinResolver(
             title = title ?: titleInHtml(page),
             headers = headers,
             platform = MediaPlatform.DOUYIN,
+            author = author,
+            cover = cover,
+            publishTime = publishTime,
+            playCount = playCount,
+            // 抖音没有单独的简介，作品文案（desc）就是它
+            description = title,
+            images = images,
         )
 
     /**
@@ -112,6 +120,10 @@ class DouyinResolver(
 
     private companion object {
         const val TAG = "QzLink"
+
+        const val KIND_VIDEO = "video"
+        const val KIND_NOTE = "note"
+        const val KIND_SLIDES = "slides"
 
         const val DEFAULT_TTWID_URL = "https://ttwid.bytedance.com/ttwid/union/register/"
 
@@ -138,7 +150,17 @@ class DouyinResolver(
     }
 }
 
-internal data class DouyinItem(val title: String?, val playUrl: String?)
+internal data class DouyinItem(
+    val title: String?,
+    val playUrl: String?,
+    val author: String? = null,
+    val cover: String? = null,
+    /** 发布时间（epoch 秒）。 */
+    val publishTime: Long? = null,
+    val playCount: Long? = null,
+    /** 图集作品的原图直链（视频作品为空）。 */
+    val images: List<String> = emptyList(),
+)
 
 /**
  * 从分享页 HTML 里找 `window._ROUTER_DATA = {...}`，把 JSON 抠出来再取第一条作品。
@@ -159,7 +181,8 @@ internal fun parseRouterData(html: String): DouyinItem? {
 
 private fun findPlayableItem(node: Any?): DouyinItem? = when (node) {
     is JSONObject -> {
-        itemOf(node)?.takeIf { it.playUrl != null }?.let { return it }
+        // 视频要有播放地址，图集要有图片列表 —— 两者占其一就算命中
+        itemOf(node)?.takeIf { it.playUrl != null || it.images.isNotEmpty() }?.let { return it }
         node.keys().asSequence().forEach { key -> findPlayableItem(node.opt(key))?.let { return it } }
         null
     }
@@ -248,7 +271,7 @@ internal fun itemOfInfo(info: JSONObject): DouyinItem? {
     return itemOf(first)
 }
 
-/** 一条作品：标题取 desc，地址取 video.play_addr。 */
+/** 一条作品：标题取 desc，地址取 video.play_addr；图集作品取 images，其余是展示用的元数据。 */
 internal fun itemOf(item: JSONObject): DouyinItem? {
     val title = item.optString("desc").ifBlank { null }
     val video = item.optJSONObject("video")
@@ -261,8 +284,44 @@ internal fun itemOf(item: JSONObject): DouyinItem? {
         if (it.startsWith("//")) "https:$it" else it
     }
     val url = raw?.let(::normalizePlayUrl)
-    if (title == null && url == null) return null
-    return DouyinItem(title, url)
+    // 图集：images 数组里每个元素都是一张图（结构和 play_addr 一样带 url_list）
+    val images = item.optJSONArray("images")?.let { array ->
+        (0 until array.length()).mapNotNull { index ->
+            firstUrl(array.optJSONObject(index)?.optJSONObject("url_list") ?: return@mapNotNull null)
+        }
+    }.orEmpty()
+    if (title == null && url == null && images.isEmpty()) return null
+    return DouyinItem(
+        title = title,
+        playUrl = url,
+        author = item.optJSONObject("author")?.optString("nickname")?.ifBlank { null },
+        cover = video?.let { firstUrl(it.optJSONObject("cover")) ?: firstUrl(it.optJSONObject("origin_cover")) }
+            ?: images.firstOrNull(),
+        publishTime = item.optLong("create_time", 0L).takeIf { it > 0 },
+        playCount = item.optJSONObject("statistics")?.optLong("play_count", 0L)?.takeIf { it > 0 },
+        images = images,
+    )
+}
+
+/** `{uri, url_list:[…]}` 形状的地址对象 → 第一条可用的 http(s) 地址。 */
+private fun firstUrl(obj: JSONObject?): String? {
+    if (obj == null) return null
+    val fromList = obj.optJSONArray("url_list")?.let { list ->
+        (0 until list.length()).map { list.optString(it) }.firstOrNull { it.isNotBlank() }
+    }
+    val raw = fromList ?: obj.optString("url").ifBlank { null } ?: obj.optString("uri").ifBlank { null }
+    return raw?.takeIf { it.isNotBlank() }?.let(::absoluteUrl)
+}
+
+/** 抖音给的地址经常是协议相对的（`//p3-sign.douyinpic.com/…`），补上 https。 */
+private fun absoluteUrl(raw: String): String =
+    if (raw.startsWith("//")) "https:$raw" else raw
+
+/** 从路径里认作品类型：/share/note/{id}/ 是图集，/share/slides/{id}/ 是幻灯片，其余按普通视频。 */
+internal fun kindOf(url: String): String = when {
+    pathOf(url).contains("/note/") -> "note"
+    pathOf(url).contains("/slides/") -> "slides"
+    else -> "video"
 }
 
 /** 直链可能是 http（Android 默认不允许明文），带水印那路也要换掉。 */
