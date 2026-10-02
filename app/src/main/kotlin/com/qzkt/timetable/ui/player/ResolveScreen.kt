@@ -1,13 +1,20 @@
 package com.qzkt.timetable.ui.player
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -24,20 +31,34 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.qzkt.timetable.data.anime.AnimePlayRequest
+import com.qzkt.timetable.ui.common.SectionCard
 import com.qzkt.timetable.ui.player.link.MediaLinkResolver
+import com.qzkt.timetable.ui.player.link.ResolvedMedia
 import com.qzkt.timetable.ui.player.link.detectShareLink
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -65,7 +86,8 @@ private fun normalizeStreamUrl(raw: String): String? {
  * 真实地址再交给播放器；普通流地址（`.m3u8` / 直链）不走解析直接播。
  * 防盗链站可以在「请求头」里补 Referer / User-Agent，见 [StreamHeaders]。
  *
- * 解析成功后跳到播放器页播放（播放器本身不在工具页显示）。
+ * 解析成功后**停留在本页**展示作品信息（封面 / 作者 / 发布时间 / 播放量 / 简介 / 直链），
+ * 点「播放」才跳到播放器页。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,8 +105,9 @@ fun ResolveScreen(
     // 分享链接要先联网才能换到真实地址，解析期间按钮显示「解析中…」，防止重复点
     var resolving by remember { mutableStateOf(false) }
     var lastError by remember { mutableStateOf<String?>(null) }
+    var resolved by remember { mutableStateOf<ResolvedMedia?>(null) }
 
-    fun resolveAndPlay() {
+    fun resolve() {
         if (urlInput.isBlank() || resolving) return
         val raw = urlInput.trim()
         val userHeaders = parseHeaderBlock(headersInput)
@@ -92,7 +115,7 @@ fun ResolveScreen(
 
         val link = detectShareLink(raw)
         if (link == null) {
-            // 不是分享链接，就当普通流地址处理
+            // 不是分享链接，就当普通流地址处理：没有平台信息，直接给直链结果
             val url = normalizeStreamUrl(raw)
             if (url == null) {
                 lastError = "看不出来这是个链接，检查一下再试"
@@ -100,7 +123,12 @@ fun ResolveScreen(
             }
             StreamHeaders.set(userHeaders)
             urlInput = ""
-            onPlay(AnimePlayRequest(url = url, title = ""))
+            resolved = ResolvedMedia(
+                url = url,
+                title = null,
+                headers = userHeaders,
+                platform = null,
+            )
             return
         }
 
@@ -112,12 +140,7 @@ fun ResolveScreen(
                 val media = linkResolver.resolve(raw, userHeaders)
                 StreamHeaders.set(media.headers)
                 urlInput = ""
-                onPlay(
-                    AnimePlayRequest(
-                        url = media.url,
-                        title = media.title ?: raw.take(40),
-                    ),
-                )
+                resolved = media
             } catch (e: CancellationException) {
                 throw e   // 页面被销毁时的正常取消，不算解析失败
             } catch (e: Exception) {
@@ -161,7 +184,7 @@ fun ResolveScreen(
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodySmall,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { resolveAndPlay() }),
+                keyboardActions = KeyboardActions(onSearch = { resolve() }),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -196,16 +219,15 @@ fun ResolveScreen(
             }
 
             Button(
-                onClick = { resolveAndPlay() },
+                onClick = { resolve() },
                 enabled = urlInput.isNotBlank() && !resolving,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (resolving) "解析中…" else "解析并播放")
+                Text(if (resolving) "解析中…" else if (resolved != null) "重新解析" else "解析")
             }
 
             Text(
-                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行），解析后直接跳到播放器；" +
-                    "普通流地址（.m3u8 / 直链）不走解析直接播。",
+                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行）；普通流地址（.m3u8 / 直链）不走解析直接给直链。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -218,7 +240,149 @@ fun ResolveScreen(
                 )
             }
 
+            resolved?.let { media ->
+                ResolvedCard(
+                    media = media,
+                    onPlay = {
+                        onPlay(
+                            AnimePlayRequest(
+                                url = media.url,
+                                title = media.title ?: "",
+                            ),
+                        )
+                    },
+                )
+            }
+
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+/** 解析结果卡：封面 / 标题 / 作者 / 发布时间 / 播放量 / 简介 / 直链（可复制）+ 播放按钮。 */
+@Composable
+private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
+
+    SectionCard("解析结果") {
+        Row {
+            Box(
+                modifier = Modifier
+                    .width(150.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (media.cover != null) {
+                    AsyncImage(
+                        model = media.cover,
+                        contentDescription = "封面",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Text(
+                        text = "无封面",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = media.title ?: "未命名视频",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                media.author?.let { author ->
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = author,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val metaLine = listOfNotNull(
+                    media.publishTime?.let { "发布于 ${formatDate(it)}" },
+                    media.playCount?.let { "播放 ${formatCount(it)}" },
+                ).joinToString(" · ")
+                if (metaLine.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = metaLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        media.description?.let { description ->
+            Spacer(Modifier.height(10.dp))
+            var expanded by remember(description) { mutableStateOf(false) }
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable { expanded = !expanded },
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Text("视频直链", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = media.url,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = {
+                clipboard.setText(AnnotatedString(media.url))
+                copied = true
+            }) { Text(if (copied) "已复制" else "复制") }
+        }
+
+        media.warning?.let { warning ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = warning,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onPlay, modifier = Modifier.fillMaxWidth()) {
+            Text("播放")
+        }
+    }
+}
+
+/** epoch 秒 → 「2026年10月1日」。 */
+private fun formatDate(epochSeconds: Long): String =
+    java.time.Instant.ofEpochSecond(epochSeconds).atZone(java.time.ZoneId.systemDefault())
+        .let { "${it.year}年${it.monthValue}月${it.dayOfMonth}日" }
+
+/** 播放量按中文习惯缩写：1.2亿 / 45.6万 / 789。 */
+private fun formatCount(count: Long): String = when {
+    count >= 100_000_000L -> String.format("%.1f亿", count / 100_000_000.0)
+    count >= 10_000L -> String.format("%.1f万", count / 10_000.0)
+    else -> count.toString()
 }

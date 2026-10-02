@@ -133,13 +133,19 @@ class BilibiliResolver(
             headers = usable.second.withCookies(),
             platform = MediaPlatform.BILIBILI,
             warning = play.warning,
+            playCount = view.playCount,
+            description = view.description,
+            publishTime = view.publishTime,
+            author = view.author,
+            cover = view.cover,
         )
     }
 
     /** 番剧 / 影视：pgc 接口按 ep 或 ss 拿剧集，再用同一套 playurl 拿地址。 */
     private fun resolveBangumi(link: MediaLink.Bilibili, headers: Map<String, String>): ResolvedMedia {
         val query = link.epId?.let { "ep_id=$it" } ?: ("season_id=" + link.ssId)
-        val episode = parseBangumi(client.fetch("$apiBase/pgc/view/web/season?$query", headers).body, link.epId)
+        val season = parseBangumiSeason(client.fetch("$apiBase/pgc/view/web/season?$query", headers).body)
+        val episode = season.episodes.firstOrNull { it.epId == link.epId } ?: season.episodes.first()
         val play = playUrl(episode.bvid, episode.cid, headers)
         val usable = pickPlayable(play, headers, episode.bvid)
         return ResolvedMedia(
@@ -150,6 +156,11 @@ class BilibiliResolver(
             headers = usable.second.withCookies(),
             platform = MediaPlatform.BILIBILI,
             warning = play.warning,
+            playCount = null,   // 番剧接口不公开播放量
+            description = season.description,
+            publishTime = season.publishTime,
+            author = season.author,
+            cover = season.cover,
         )
     }
 
@@ -241,9 +252,27 @@ internal data class BiliPage(val cid: Long, val page: Int, val part: String) {
     }
 }
 
-internal data class BiliVideo(val bvid: String, val title: String, val pages: List<BiliPage>)
+internal data class BiliVideo(
+    val bvid: String,
+    val title: String,
+    val pages: List<BiliPage>,
+    val cover: String? = null,
+    val description: String? = null,
+    val author: String? = null,
+    /** 发布时间（epoch 秒）。 */
+    val publishTime: Long? = null,
+    val playCount: Long? = null,
+)
 
 internal data class BiliEpisode(val bvid: String, val cid: Long, val epId: Long, val title: String)
+
+internal data class BiliSeason(
+    val episodes: List<BiliEpisode>,
+    val cover: String? = null,
+    val description: String? = null,
+    val author: String? = null,
+    val publishTime: Long? = null,
+)
 
 internal data class BiliPlayUrl(
     val url: String,
@@ -282,11 +311,20 @@ internal fun parseVideoInfo(json: String): BiliVideo {
         }
     }.orEmpty()
     if (pages.isEmpty()) throw LinkResolveException("B站没有返回可播放的分P")
-    return BiliVideo(data.optString("bvid"), data.optString("title"), pages)
+    return BiliVideo(
+        bvid = data.optString("bvid"),
+        title = data.optString("title"),
+        pages = pages,
+        cover = data.optString("pic").ifBlank { null },
+        description = data.optString("desc").ifBlank { null },
+        author = data.optJSONObject("owner")?.optString("name")?.ifBlank { null },
+        publishTime = data.optLong("pubdate", 0L).takeIf { it > 0 },
+        playCount = data.optJSONObject("stat")?.optLong("view", 0L)?.takeIf { it > 0 },
+    )
 }
 
-/** 解析 pgc 番剧接口：[epId] 给定时优先选那一集，否则取第一集。 */
-internal fun parseBangumi(json: String, epId: Long?): BiliEpisode {
+/** 解析 pgc 番剧接口：剧集列表 + 作品信息（简介 / 封面 / 出品方 / 发布日期）。 */
+internal fun parseBangumiSeason(json: String): BiliSeason {
     val root = jsonOf(json, "B站番剧接口")
     checkBiliCode(root)
     val result = root.optJSONObject("result") ?: root.optJSONObject("data")
@@ -303,7 +341,21 @@ internal fun parseBangumi(json: String, epId: Long?): BiliEpisode {
         BiliEpisode(bvid, cid, ep.optLong("id", 0L), label)
     }
     if (episodes.isEmpty()) throw LinkResolveException("B站没有返回可播放的剧集")
-    return episodes.firstOrNull { it.epId == epId } ?: episodes.first()
+    // 发布时间：publish.pub_time 是 "2023-01-01" 这类日期串，转成 epoch 秒；解析不出来就空着
+    val publishTime = result.optJSONObject("publish")?.optString("pub_time")
+        ?.takeIf { it.isNotBlank() }
+        ?.let {
+            runCatching {
+                java.time.LocalDate.parse(it).atStartOfDay().toEpochSecond(java.time.ZoneOffset.UTC)
+            }.getOrNull()
+        }
+    return BiliSeason(
+        episodes = episodes,
+        cover = result.optString("cover").ifBlank { null },
+        description = result.optString("evaluate").ifBlank { null },
+        author = result.optJSONObject("up_info")?.optString("uname")?.ifBlank { null },
+        publishTime = publishTime,
+    )
 }
 
 /**
