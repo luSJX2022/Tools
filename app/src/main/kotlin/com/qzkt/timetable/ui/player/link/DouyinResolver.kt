@@ -58,32 +58,50 @@ class DouyinResolver(
         // 图集（note）的分享页在 /share/note/{id}/，用 /share/video/{id}/ 去要会拿错页面
         val shareUrl = "$webBase/share/$kind/$awemeId/"
         var lastHtml = firstPage
+        // 图文（note）作品里除了 images 还带一段自动生成的幻灯片视频（play_addr），
+        // 但那段地址包出来经常是坏的 —— **有图集就按图集返回，视频只做兜底**。
+        var videoFallback: DouyinItem? = null
+        var videoFallbackHtml: String? = null
+        var videoFallbackUa: String = MOBILE_UA
         USER_AGENTS.forEachIndexed { index, ua ->
             val html = (if (index == 0) firstPage else null)
                 ?: client.fetch(shareUrl, shareHeaders(userHeaders, ua)).body
             lastHtml = html
             val item = parseRouterData(html)
-            if (item?.playUrl != null) {
-                Log.i(TAG, "抖音分享页命中 UA#" + (index + 1))
+            if (item?.images?.isNotEmpty() == true) {
+                Log.i(TAG, "抖音分享页命中 UA#" + (index + 1) + "（图集 " + item.images.size + " 张）")
                 return item.asResolved(html, playHeaders(userHeaders, ua))
             }
-            Log.w(TAG, "抖音 UA#" + (index + 1) + " 没有播放地址：" + (routerDataStructure(html) ?: "没有 _ROUTER_DATA"))
+            if (item?.playUrl != null && videoFallback == null) {
+                videoFallback = item
+                videoFallbackHtml = html
+                videoFallbackUa = ua
+            }
+            Log.w(TAG, "抖音 UA#" + (index + 1) + " 没有图集：" + (routerDataStructure(html) ?: "没有 _ROUTER_DATA"))
+        }
+
+        // 所有 UA 都没拿到图集，但拿到了视频地址：按视频返回
+        videoFallback?.let { item ->
+            Log.i(TAG, "抖音按视频兜底返回")
+            return item.asResolved(videoFallbackHtml.orEmpty(), playHeaders(userHeaders, videoFallbackUa))
         }
 
         // 老接口兜底（分享页改版时偶尔还能用）
         val fallback = parseItemInfo(
             client.fetch("$apiBase/web/api/v2/aweme/iteminfo/?item_ids=$awemeId", shareHeaders(userHeaders, MOBILE_UA)).body,
         )
-        fallback?.playUrl?.let { return it.let { _ -> fallback.asResolved(lastHtml.orEmpty(), playHeaders(userHeaders, MOBILE_UA)) } }
+        if (fallback != null && (fallback.images.isNotEmpty() || fallback.playUrl != null)) {
+            return fallback.asResolved(lastHtml.orEmpty(), playHeaders(userHeaders, MOBILE_UA))
+        }
 
         // 说清楚卡在哪一步，别让用户对着一句「失败」猜
         val html = lastHtml.orEmpty()
         val hint = when {
             html.isBlank() -> "分享页是空的"
             !html.contains("_ROUTER_DATA") -> "分享页里没有 _ROUTER_DATA（页面可能改版或被要求验证）"
-            else -> "分享页里没有播放地址" + (routerDataSummary(html)?.let { "（$it）" } ?: "")
+            else -> "分享页里没有播放地址或图集" + (routerDataSummary(html)?.let { "（$it）" } ?: "")
         }
-        throw LinkResolveException("抖音没有返回播放地址（" + hint + "）：链接可能已失效，或这个作品需要登录才能看")
+        throw LinkResolveException("抖音没有返回可看的内容（" + hint + "）：链接可能已失效，或这个作品需要登录才能看")
     }
 
     /**
@@ -106,7 +124,8 @@ class DouyinResolver(
 
     private fun DouyinItem.asResolved(page: String, headers: Map<String, String>): ResolvedMedia =
         ResolvedMedia(
-            url = playUrl.orEmpty(),
+            // 图集作品以图为主：不放幻灯片视频的播放地址，界面按图集展示
+            url = if (images.isNotEmpty()) "" else playUrl.orEmpty(),
             title = title ?: titleInHtml(page),
             headers = headers,
             platform = MediaPlatform.DOUYIN,
@@ -192,9 +211,8 @@ internal data class DouyinItem(
 )
 
 /**
- * 从分享页 HTML 里找 `window._ROUTER_DATA = {...}`，把 JSON 抠出来再取第一条作品。
- *
- * 不能直接正则截到行尾：这块 JSON 很长，且里面带转义引号，只能按花括号配对切出来。
+ * 整棵树里找作品：**图集（带 images）优先**，其次才是带播放地址的视频作品 ——
+ * 图文作品里 images 和幻灯片 play_addr 会同时出现，图集才是用户要的东西。
  */
 internal fun parseRouterData(html: String): DouyinItem? {
     val marker = html.indexOf("_ROUTER_DATA")
@@ -204,22 +222,28 @@ internal fun parseRouterData(html: String): DouyinItem? {
     val json = jsonObjectAt(html, start) ?: return null
     val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
     // 不写死 loaderData → videoInfoRes → item_list 这条路径：抖音换过好几次结构，
-    // 而且图文、直播、合集用的键都不一样。整棵树里找第一个真带播放地址的 item 更省心。
-    return findPlayableItem(root)
-}
+    // 而且图文、直播、合集用的键都不一样。整棵树里找，两轮扫描：先图集后视频。
+    var videoFallback: DouyinItem? = null
 
-private fun findPlayableItem(node: Any?): DouyinItem? = when (node) {
-    is JSONObject -> {
-        // 视频要有播放地址，图集要有图片列表 —— 两者占其一就算命中
-        itemOf(node)?.takeIf { it.playUrl != null || it.images.isNotEmpty() }?.let { return it }
-        node.keys().asSequence().forEach { key -> findPlayableItem(node.opt(key))?.let { return it } }
-        null
+    fun walk(node: Any?): DouyinItem? {
+        when (node) {
+            is JSONObject -> {
+                val item = itemOf(node)
+                if (item != null) {
+                    if (item.images.isNotEmpty()) return item
+                    if (item.playUrl != null && videoFallback == null) videoFallback = item
+                }
+                node.keys().asSequence().forEach { key -> walk(node.opt(key))?.let { return it } }
+            }
+            is JSONArray -> {
+                for (index in 0 until node.length()) walk(node.opt(index))?.let { return it }
+            }
+        }
+        return null
     }
-    is JSONArray -> {
-        for (index in 0 until node.length()) findPlayableItem(node.opt(index))?.let { return it }
-        null
-    }
-    else -> null
+
+    walk(root)?.let { return it }
+    return videoFallback
 }
 
 /**
@@ -308,15 +332,19 @@ internal fun itemOf(item: JSONObject): DouyinItem? {
     val raw = playAddr?.optJSONArray("url_list")?.let { list ->
         (0 until list.length()).map { list.optString(it) }.firstOrNull { it.isNotBlank() }
     } ?: playAddr?.optString("uri")?.takeIf { it.isNotBlank() }?.let {
-        "https://aweme.snssdk.com/aweme/v1/play/?video_id=$it&ratio=1080p&line=0"
+        // 图文作品的幻灯片 play_addr 里 uri 本身就是一条完整 URL，直接用；
+        // 只有真正的视频 id（数字/字母串）才需要包成 play 接口地址
+        if (it.startsWith("http", true)) normalizePlayUrl(it)
+        else "https://aweme.snssdk.com/aweme/v1/play/?video_id=$it&ratio=1080p&line=0"
     } ?: video?.optString("playApi")?.takeIf { it.isNotBlank() }?.let {
         if (it.startsWith("//")) "https:$it" else it
     }
     val url = raw?.let(::normalizePlayUrl)
-    // 图集：images 数组里每个元素都是一张图（结构和 play_addr 一样带 url_list）
+    // 图集：images 数组里每个元素是一张图，形状是 {uri, url_list:[...]}
+    // —— 直接把这张图的对象交给 firstUrl（url_list 是数组，不能再 optJSONObject 一层）
     val images = item.optJSONArray("images")?.let { array ->
         (0 until array.length()).mapNotNull { index ->
-            firstUrl(array.optJSONObject(index)?.optJSONObject("url_list") ?: return@mapNotNull null)
+            firstUrl(array.optJSONObject(index))
         }
     }.orEmpty()
     if (title == null && url == null && images.isEmpty()) return null

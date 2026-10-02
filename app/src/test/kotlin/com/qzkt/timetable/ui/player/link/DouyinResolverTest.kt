@@ -25,6 +25,9 @@ class DouyinResolverTest {
     /** 分享页里有没有 `_ROUTER_DATA`（模拟改版）。 */
     private var routerDataPresent = true
 
+    /** 分享页里放的是图文作品（带 images）还是普通视频。 */
+    private var noteItem = false
+
     private val awemeId = "7123456789012345678"
 
     @Before
@@ -90,7 +93,26 @@ class DouyinResolverTest {
         val error = runCatching {
             resolver().resolve(MediaLink.Douyin(url = "$base/video/$awemeId", awemeId = awemeId))
         }.exceptionOrNull() as LinkResolveException
-        assertTrue(error.message!!.contains("抖音没有返回播放地址"))
+        assertTrue(error.message!!.contains("抖音没有返回可看的内容"))
+    }
+
+    /**
+     * 图文（note）作品里除了 images 还带一段自动生成的幻灯片视频（play_addr）。
+     * 以前「有播放地址就按视频返回」，结果图文被当成视频、图集反而丢了；
+     * 现在图集优先：按图集返回，且不放那段幻灯片地址（播放按钮不该出现）。
+     */
+    @Test
+    fun `图文作品按图集返回而不是幻灯片视频`() = runBlocking {
+        noteItem = true
+        val media = resolver().resolve(MediaLink.Douyin(url = "$base/video/$awemeId", awemeId = awemeId))
+
+        assertEquals(
+            listOf("https://cdn.example.com/p1.jpg", "https://cdn.example.com/p2.jpg"),
+            media.images,
+        )
+        assertEquals("", media.url)     // 图集不放幻灯片播放地址
+        assertEquals("图文作品", media.title)
+        assertEquals("千寻", media.author)
     }
 
     /** 结构变过好几版：只要树里有带播放地址的 item，就得认得出来。 */
@@ -146,10 +168,18 @@ class DouyinResolverTest {
 
     private fun sharePage(): String {
         if (!routerDataPresent) return "<html><head><title>抖音</title></head><body>改版了</body></html>"
+        val item = if (noteItem) {
+            "{\"desc\":\"图文作品\",\"author\":{\"nickname\":\"千寻\"},\"images\":[" +
+                "{\"url_list\":[\"https://cdn.example.com/p1.jpg\"]}," +
+                "{\"url_list\":[\"https://cdn.example.com/p2.jpg\"]}]," +
+                "\"video\":{\"play_addr\":{\"uri\":\"https://v.example.com/slides.mp4\",\"url_list\":[]}}}"
+        } else {
+            "{\"desc\":\"测试抖音作品\"," +
+                "\"video\":{\"play_addr\":{\"uri\":\"v123\",\"url_list\":[" +
+                "\"https://cdn.example.com/aweme/v1/playwm/?video_id=v123&ratio=720p\"]}}}"
+        }
         return "<html><head><title>抖音分享</title></head><body><script>window._ROUTER_DATA = " +
-            "{\"loaderData\":{\"video_(id)/page\":{\"videoInfoRes\":{\"item_list\":[{\"desc\":\"测试抖音作品\"," +
-            "\"video\":{\"play_addr\":{\"uri\":\"v123\",\"url_list\":[" +
-            "\"https://cdn.example.com/aweme/v1/playwm/?video_id=v123&ratio=720p\"]}}}]}}},\"errors\":{}};</script></body></html>"
+            "{\"loaderData\":{\"video_(id)/page\":{\"videoInfoRes\":{\"item_list\":[$item]}}},\"errors\":{}};</script></body></html>"
     }
 
     private fun itemInfoBody(): String =
