@@ -3,7 +3,10 @@ package com.qzkt.timetable.ui.player.link
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -28,6 +31,9 @@ class DouyinResolver(
 
     /** ttwid 只取一次。 */
     private var ttwidChecked = false
+
+    /** 注册接口换到的 ttwid 值；分享页请求要显式带上（见 [shareHeaders]）。 */
+    private var ttwidValue: String? = null
 
     suspend fun resolve(link: MediaLink.Douyin, userHeaders: Map<String, String> = emptyMap()): ResolvedMedia =
         withContext(Dispatchers.IO) { resolveBlocking(link, userHeaders) }
@@ -80,8 +86,17 @@ class DouyinResolver(
         throw LinkResolveException("抖音没有返回播放地址（" + hint + "）：链接可能已失效，或这个作品需要登录才能看")
     }
 
-    private fun shareHeaders(userHeaders: Map<String, String>, ua: String): Map<String, String> =
-        userHeaders + mapOf("User-Agent" to ua, "Referer" to "https://www.douyin.com/")
+    /**
+     * 分享页的 SSR 必须带 ttwid（实测无 ttwid 时图文分享页是空壳，`_ROUTER_DATA`
+     * 里只有页面元数据、没有作品数据）——显式放进 Cookie 头，不依赖 CookieJar
+     * 的域名匹配；jar 里其它的抖音 Cookie 一起带上无妨。
+     */
+    private fun shareHeaders(userHeaders: Map<String, String>, ua: String): Map<String, String> {
+        val cookies = (client.cookieJar as? LinkCookieJar)?.header().orEmpty()
+            .ifBlank { ttwidValue?.let { "ttwid=$it" } ?: "" }
+        val base = userHeaders + mapOf("User-Agent" to ua, "Referer" to "https://www.douyin.com/")
+        return if (cookies.isBlank()) base else base + ("Cookie" to cookies)
+    }
 
     /** 播放/下载那一侧不走 CookieJar，Cookie 得显式带（ttwid 之类）。 */
     private fun playHeaders(userHeaders: Map<String, String>, ua: String): Map<String, String> =
@@ -105,17 +120,31 @@ class DouyinResolver(
         )
 
     /**
-     * 抖音对没有反爬 Cookie 的请求会返回**空壳分享页**（`item_list` 是空的）：
-     * 现象就是「解析不到播放地址」。先去字节的 ttwid 注册接口换一个 ttwid 回来，
-     * 再带着它请求分享页（真机实测：没有 ttwid 时 item_list=0）。
+     * 抖音对没有反爬 Cookie 的请求会返回**空壳分享页**：图文（note）分享页实测
+     * `_ROUTER_DATA` 里只有页面元数据、压根没有作品数据，现象就是「解析不到」。
+     * 先去字节的 ttwid 注册接口换一个 ttwid 回来。注册接口种的 Cookie 域名
+     * 不一定匹配 iesdouyin.com，所以这里显式挂到 `.douyin.com`（见
+     * [LinkCookieJar.put]），并留一份给 [shareHeaders] 显式带上。
      */
     private fun ensureTtwid(headers: Map<String, String>) {
         if (ttwidChecked) return
         ttwidChecked = true
         val jar = client.cookieJar as? LinkCookieJar ?: return
         if (jar.has("ttwid")) return
-        runCatching { client.postJson(ttwidUrl, TTWID_BODY, headers) }
-        Log.w(TAG, "ttwid=" + jar.has("ttwid"))
+        runCatching {
+            client.newCall(
+                Request.Builder().url(ttwidUrl)
+                    .post(TTWID_BODY.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    .build(),
+            ).execute().use { resp ->
+                resp.headers("Set-Cookie").forEach { line ->
+                    val value = Regex("ttwid=([^;]+)").find(line)?.groupValues?.get(1) ?: return@forEach
+                    ttwidValue = value
+                    jar.put(".douyin.com", "ttwid", value)
+                }
+            }
+            Log.w(TAG, "ttwid=" + jar.has("ttwid"))
+        }
     }
 
     private companion object {
