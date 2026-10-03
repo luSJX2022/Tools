@@ -94,14 +94,15 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
         viewModelScope.launch { store.readerNight.collect { _night.value = it } }
     }
 
-    /** 书城搜书（用第一个内置在线书源）。 */
+    /** 书城搜书（用当前选中的在线书源）。 */
     fun search(keyword: String) {
-        val source: BookSource = BookSources.byKey("quanben5")
+        val source: BookSource = BookSources.byKey(_sourceKey.value)
         val query = keyword.trim()
         if (query.isEmpty() || _searching.value) return
         viewModelScope.launch {
             _searching.value = true
             _searchError.value = null
+            _category.value = StoreCategoryState()   // 搜索时退出分类浏览，让结果显示出来
             runCatching { source.search(query) }
                 .onSuccess { _searchResults.value = it }
                 .onFailure { _searchError.value = it.message ?: "搜索失败" }
@@ -186,10 +187,11 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
         }
     }
 
-    /** 打开一个分类（加载第 1 页）。 */
+    /** 打开一个分类（加载第 1 页），并清掉搜索结果让分类列表显示出来。 */
     fun openCategory(categoryId: String) {
-        val state = _category.value
-        if (state.categoryId == categoryId && state.books.isNotEmpty()) return
+        if (_category.value.categoryId == categoryId && _category.value.books.isNotEmpty()) return
+        _searchResults.value = null
+        _searchError.value = null
         loadCategoryPage(categoryId, 1)
     }
 

@@ -339,6 +339,7 @@ fun QzktApp(
                         videoSources = animeViewModel.availableSources,
                         videoSourceKey = animeSourceKey,
                         onSelectVideoSource = { animeViewModel.selectSource(it) },
+                        bookViewModel = bookViewModel,
                     )
                 }
 

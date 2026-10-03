@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -139,22 +140,32 @@ fun BookshelfScreen(
             }
 
             when (tab) {
-                "store" -> StoreTab(
-                    query = query,
-                    onQueryChange = { query = it },
-                    searching = searching,
-                    searchError = searchError,
-                    results = searchResults,
-                    onSearch = { viewModel.search(query) },
-                    category = categoryState,
-                    categories = viewModel.categories,
-                    currentSourceName = viewModel.onlineSource.name,
-                    onOpenCategory = { viewModel.openCategory(it) },
-                    onCategoryNextPage = { viewModel.categoryNextPage() },
-                    onOpenBook = { onlineBook ->
-                        viewModel.addOnlineBook(onlineBook) { id -> onOpenBook(id) }
-                    },
-                )
+                "store" -> {
+                    // 进书城时什么都不做就空着不好看：没有搜索结果也没选分类时，自动加载第一个分类
+                    LaunchedEffect(categoryState.categoryId, searchResults, tab) {
+                        if (categoryState.categoryId.isEmpty() && searchResults == null &&
+                            searchError == null && !searching
+                        ) {
+                            viewModel.categories.firstOrNull()?.second?.let { viewModel.openCategory(it) }
+                        }
+                    }
+                    StoreTab(
+                        query = query,
+                        onQueryChange = { query = it },
+                        searching = searching,
+                        searchError = searchError,
+                        results = searchResults,
+                        onSearch = { viewModel.search(query) },
+                        category = categoryState,
+                        categories = viewModel.categories,
+                        currentSourceName = viewModel.onlineSource.name,
+                        onOpenCategory = { viewModel.openCategory(it) },
+                        onCategoryNextPage = { viewModel.categoryNextPage() },
+                        onOpenBook = { onlineBook ->
+                            viewModel.addOnlineBook(onlineBook) { id -> onOpenBook(id) }
+                        },
+                    )
+                }
                 "nlc" -> NlcTab(
                     state = nlcState,
                     onSearch = { viewModel.searchNlc(it) },
