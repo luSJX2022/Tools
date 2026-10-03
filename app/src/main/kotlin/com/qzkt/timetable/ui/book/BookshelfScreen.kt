@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +19,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -73,6 +76,7 @@ fun BookshelfScreen(
     val searching by viewModel.searching.collectAsStateWithLifecycle()
     val searchError by viewModel.searchError.collectAsStateWithLifecycle()
     val nlcState by viewModel.nlc.collectAsStateWithLifecycle()
+    val categoryState by viewModel.category.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf("shelf") }   // shelf：书架，store：书城
     var query by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
@@ -142,6 +146,11 @@ fun BookshelfScreen(
                     searchError = searchError,
                     results = searchResults,
                     onSearch = { viewModel.search(query) },
+                    category = categoryState,
+                    categories = viewModel.categories,
+                    currentSourceName = viewModel.onlineSource.name,
+                    onOpenCategory = { viewModel.openCategory(it) },
+                    onCategoryNextPage = { viewModel.categoryNextPage() },
                     onOpenBook = { onlineBook ->
                         viewModel.addOnlineBook(onlineBook) { id -> onOpenBook(id) }
                     },
@@ -200,7 +209,7 @@ private fun ShelfTab(books: List<Book>, onOpenBook: (Book) -> Unit, onDelete: (B
     }
 }
 
-/** 书城：搜索在线书源，点结果直接入库并进阅读页。 */
+/** 书城：分类浏览 + 搜索在线书源，点结果直接入库并进阅读页。 */
 @Composable
 private fun StoreTab(
     query: String,
@@ -209,49 +218,123 @@ private fun StoreTab(
     searchError: String?,
     results: List<com.qzkt.timetable.data.book.OnlineBook>?,
     onSearch: () -> Unit,
+    category: StoreCategoryState,
+    categories: List<Pair<String, String>>,
+    currentSourceName: String,
+    onOpenCategory: (String) -> Unit,
+    onCategoryNextPage: () -> Unit,
     onOpenBook: (com.qzkt.timetable.data.book.OnlineBook) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = { Text("书名 / 作者 / 关键词", style = MaterialTheme.typography.bodySmall) },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onSearch, enabled = query.isNotBlank() && !searching) {
-                Text(if (searching) "搜索中…" else "搜索")
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        placeholder = { Text("书名 / 作者 / 关键词", style = MaterialTheme.typography.bodySmall) },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onSearch, enabled = query.isNotBlank() && !searching) {
+                        Text(if (searching) "搜索中…" else "搜索")
+                    }
+                }
+
+                // 分类栏（横向滚动）
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                ) {
+                    categories.forEach { (label, id) ->
+                        FilterChip(
+                            selected = category.categoryId == id,
+                            onClick = { onOpenCategory(id) },
+                            label = { Text(label, fontSize = 13.sp) },
+                        )
+                    }
+                }
+
+                Text(
+                    text = "书源：$currentSourceName（搜作者 / 题材关键词更容易命中）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-
-        Text(
-            text = "书源：${BookSources.all.first().name}（搜作者 / 题材关键词更容易命中）",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
 
         when {
-            searching -> Box(Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            searchError != null -> Text(
-                text = "搜索失败：$searchError",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-            results != null && results.isEmpty() -> Text(
-                text = "没有搜到。换个关键词（作者名 / 题材词更容易命中）",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            results != null -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(results, key = { it.sourceKey + it.bookUrl }) { onlineBook ->
-                    OnlineBookRow(onlineBook = onlineBook, onClick = { onOpenBook(onlineBook) })
+            // 分类浏览中
+            category.categoryId.isNotEmpty() -> {
+                if (category.books.isEmpty() && category.loading) {
+                    item { StoreHint("加载中…", center = true) }
+                } else if (category.error != null && category.books.isEmpty()) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "加载失败：${category.error}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            TextButton(onClick = { onOpenCategory(category.categoryId) }) { Text("重试") }
+                        }
+                    }
+                } else {
+                    items(category.books, key = { it.sourceKey + it.bookUrl }) { onlineBook ->
+                        OnlineBookRow(onlineBook = onlineBook, onClick = { onOpenBook(onlineBook) })
+                    }
+                    if (category.loading && category.books.isNotEmpty()) {
+                        item { StoreHint("加载中…", center = false) }
+                    } else if (!category.hasNext && category.books.isNotEmpty()) {
+                        item { StoreHint("没有更多了", center = true) }
+                    } else if (category.hasNext) {
+                        item {
+                            TextButton(onClick = onCategoryNextPage, modifier = Modifier.fillMaxWidth()) {
+                                Text("加载更多")
+                            }
+                        }
+                    }
                 }
             }
+            // 搜索结果
+            searching -> item { StoreHint("搜索中…", center = true) }
+            searchError != null -> item {
+                Text(
+                    text = "搜索失败：$searchError",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            }
+            results != null && results.isEmpty() -> item {
+                StoreHint("没有搜到。换个关键词（作者名 / 题材词更容易命中）", center = true)
+            }
+            results != null -> items(results, key = { it.sourceKey + it.bookUrl }) { onlineBook ->
+                OnlineBookRow(onlineBook = onlineBook, onClick = { onOpenBook(onlineBook) })
+            }
         }
+    }
+}
+
+@Composable
+private fun StoreHint(text: String, center: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp),
+        contentAlignment = if (center) Alignment.Center else Alignment.CenterStart,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

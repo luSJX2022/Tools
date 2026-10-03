@@ -21,6 +21,8 @@ private val Context.bookDataStore: DataStore<Preferences> by preferencesDataStor
 
 @Serializable
 private data class BookStoreData(
+    /** 选中的在线书源 key（对应 BookSources.byKey）。 */
+    val sourceKey: String = "quanben5",
     val books: List<Book> = emptyList(),
     /** 阅读页正文字号（sp），全库共用。 */
     val readerFontSize: Int = 18,
@@ -49,13 +51,14 @@ data class Book(
     val lastParagraphTotal: Int = 0,
 )
 
-/** 本地 TXT 书架 + 阅读设置。在线书源以后再加。 */
+/** 本地 TXT 书架 + 在线书源 + 阅读设置。 */
 class BookStore(private val context: Context) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val booksKey = stringPreferencesKey("books_json")
     private val fontSizeKey = intPreferencesKey("reader_font_size")
     private val nightKey = booleanPreferencesKey("reader_night")
+    private val sourceKeyKey = stringPreferencesKey("book_source_key")
 
     private val data: Flow<BookStoreData> = context.bookDataStore.data
         .catch { emit(emptyPreferences()) }
@@ -67,6 +70,20 @@ class BookStore(private val context: Context) {
 
     /** 书架，最新导入的在前。 */
     val books: Flow<List<Book>> = data.map { it.books.sortedByDescending { b -> b.addedAt } }
+
+    /** 选中的在线书源 key。 */
+    val selectedSource: Flow<String> = data.map { it.sourceKey }
+
+    /** 切换在线书源（设置页用）。 */
+    suspend fun selectSource(sourceKey: String) {
+        context.bookDataStore.edit { prefs ->
+            val existing = decode(prefs[booksKey])
+            prefs[booksKey] = json.encodeToString(
+                BookStoreData.serializer(),
+                existing.copy(sourceKey = sourceKey),
+            )
+        }
+    }
 
     val readerFontSize: Flow<Int> = data.map { it.readerFontSize }
 
@@ -162,6 +179,17 @@ class BookStore(private val context: Context) {
             prefs[booksKey] = json.encodeToString(
                 BookStoreData.serializer(),
                 existing.copy(readerNight = night),
+            )
+        }
+    }
+
+    /** 清空书架（保留阅读偏好与书源选择；txt 文件本体不受影响）。 */
+    suspend fun clearAllBooks() {
+        context.bookDataStore.edit { prefs ->
+            val existing = decode(prefs[booksKey])
+            prefs[booksKey] = json.encodeToString(
+                BookStoreData.serializer(),
+                existing.copy(books = emptyList()),
             )
         }
     }

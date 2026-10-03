@@ -32,6 +32,20 @@ data class OnlineBook(
 /** 一个章节。 */
 data class OnlineChapter(val title: String, val url: String)
 
+/** 分类浏览的一页结果。 */
+data class OnlineBookPage(
+    val books: List<OnlineBook>,
+    /** 分类页翻页没有总页数信息，靠「下一页」链接是否存在判断。 */
+    val hasNext: Boolean,
+)
+
+/** 支持分类浏览的书源（书城页签的分类栏）。 */
+interface CategorizedBookSource : BookSource {
+    /** 分类显示名 to 分类 id。 */
+    val categories: List<Pair<String, String>>
+    suspend fun categoryBooks(categoryId: String, page: Int): OnlineBookPage
+}
+
 /**
  * 全本小说网（quanben5.com）：经典 HTML 书站，明文正文。
  *
@@ -49,10 +63,43 @@ class Quanben5Source(
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
     private val baseUrl: String = "https://www.quanben5.com",
-) : BookSource {
+) : BookSource, CategorizedBookSource {
 
     override val key = "quanben5"
     override val name = "全本小说网"
+
+    /** 分类 id 按站点导航实测（2026-10），16 / 17 不存在。 */
+    override val categories: List<Pair<String, String>> = listOf(
+        "玄幻" to "1", "都市" to "2", "仙侠" to "3", "武侠" to "4",
+        "言情" to "5", "穿越" to "6", "网游" to "7", "奇幻" to "8",
+        "科幻" to "9", "悬疑" to "10", "青春" to "11", "校园" to "12",
+        "军事" to "13", "历史" to "14", "同人" to "15", "其它" to "18",
+    )
+
+    /**
+     * 分类浏览：第 1 页 `/category/{id}.html`，第 N 页 `/category/{id}_{N}.html`。
+     * 书块与搜索结果同构（div.pic_txt_list），翻页靠「下一页」链接是否存在。
+     */
+    override suspend fun categoryBooks(categoryId: String, page: Int): OnlineBookPage =
+        withContext(Dispatchers.IO) {
+            val path = if (page <= 1) "/category/$categoryId.html" else "/category/${categoryId}_${page}.html"
+            val doc = fetchDoc(path)
+            val books = doc.select("div.pic_txt_list").mapNotNull { block ->
+                val name = block.selectFirst("h3 .name")?.text().orEmpty().trim()
+                val href = block.selectFirst("h3 a")?.attr("href").orEmpty().trim()
+                if (name.isEmpty() || href.isEmpty()) return@mapNotNull null
+                OnlineBook(
+                    sourceKey = key,
+                    bookUrl = href,
+                    name = name,
+                    author = block.selectFirst(".author b")?.text()?.trim(),
+                    cover = block.selectFirst(".pic img")?.attr("src")?.takeIf { it.isNotBlank() },
+                    description = block.selectFirst(".description")?.text()?.trim(),
+                )
+            }
+            val hasNext = doc.selectFirst("a[href*=\"_${page + 1}.html\"]") != null
+            OnlineBookPage(books = books, hasNext = hasNext)
+        }
 
     override suspend fun search(keyword: String): List<OnlineBook> = withContext(Dispatchers.IO) {
         val kw = keyword.trim()

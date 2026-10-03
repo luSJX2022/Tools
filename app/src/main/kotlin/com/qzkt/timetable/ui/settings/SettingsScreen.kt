@@ -12,14 +12,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -39,10 +45,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.imageLoader
 import com.qzkt.timetable.data.AppSettings
 import com.qzkt.timetable.data.anime.MacCmsSource
 import com.qzkt.timetable.data.update.UpdateChecker
+import com.qzkt.timetable.ui.book.BookViewModel
 import com.qzkt.timetable.ui.common.SectionCard
 import com.qzkt.timetable.ui.player.PlaybackService
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +68,7 @@ fun SettingsScreen(
     videoSources: List<MacCmsSource> = emptyList(),
     videoSourceKey: String = "",
     onSelectVideoSource: (String) -> Unit = {},
+    bookViewModel: BookViewModel? = null,
 ) {
     Scaffold(topBar = { TopAppBar(title = { Text("设置") }) }) { padding ->
         Column(
@@ -79,6 +88,7 @@ fun SettingsScreen(
                     onSelect = onSelectVideoSource,
                 )
             }
+            bookViewModel?.let { vm -> BookSettingsCard(viewModel = vm, animeFavoriteCount = animeFavoriteCount) }
             StorageCard(
                 animeFavoriteCount = animeFavoriteCount,
                 onClearAnimeFavorites = onClearAnimeFavorites,
@@ -246,8 +256,99 @@ private fun StorageCard(animeFavoriteCount: Int, onClearAnimeFavorites: () -> Un
     }
 }
 
-/** 检查更新在界面上的几种状态。 */
-private sealed interface UpdateUiState {
+/** 图书设置：在线书源切换 + 阅读偏好（字号 / 夜间）+ 图书数据管理。 */
+@Composable
+private fun BookSettingsCard(viewModel: BookViewModel, animeFavoriteCount: Int) {
+    val scope = rememberCoroutineScope()
+    val sourceName = viewModel.onlineSource.name
+    val fontSize by viewModel.fontSize.collectAsStateWithLifecycle()
+    val night by viewModel.night.collectAsStateWithLifecycle()
+    val books by viewModel.books.collectAsStateWithLifecycle()
+    var confirmClearBooks by remember { mutableStateOf(false) }
+
+    SectionCard("图书") {
+        // 书源（目前内置一个，后续加源后这里直接出现选项）
+        Text("在线书源", fontSize = 14.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.MenuBook,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "$sourceName（搜书 / 分类 / 在线阅读）",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+        // 阅读偏好
+        Text("阅读偏好", fontSize = 14.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("正文字号", fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { viewModel.setFontSize(fontSize - 1) }, enabled = fontSize > 14) {
+                Text("A-")
+            }
+            Text(fontSize.toString() + " sp", fontSize = 13.sp)
+            TextButton(onClick = { viewModel.setFontSize(fontSize + 1) }, enabled = fontSize < 30) {
+                Text("A+")
+            }
+        }
+        SwitchRow(
+            title = "夜间模式",
+            subtitle = "阅读页用深色底（阅读页内也能切）",
+            checked = night,
+            onCheckedChange = { viewModel.setNight(it) },
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+        // 图书数据
+        Text("图书数据", fontSize = 14.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (books.isEmpty()) "书架是空的" else "书架 ${books.size} 本" +
+                        if (animeFavoriteCount > 0) " · 收藏进度已含在书架里" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "本地 TXT 文件不计入应用占用",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(
+                onClick = { confirmClearBooks = true },
+                enabled = books.isNotEmpty(),
+            ) { Text("清空书架") }
+        }
+    }
+
+    if (confirmClearBooks) {
+        AlertDialog(
+            onDismissRequest = { confirmClearBooks = false },
+            title = { Text("清空书架？") },
+            text = { Text("会移除全部书籍（本地 TXT 和在线书）与阅读进度，不影响阅读偏好设置。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearAllBooks()
+                    confirmClearBooks = false
+                }) { Text("清空") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearBooks = false }) { Text("取消") } },
+        )
+    }
+}
+
+/** 检查更新在界面上的几种状态。 */private sealed interface UpdateUiState {
     data object Idle : UpdateUiState
     data object Checking : UpdateUiState
     data class UpToDate(val currentVersion: String) : UpdateUiState

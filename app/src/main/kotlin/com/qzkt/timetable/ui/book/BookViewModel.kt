@@ -8,6 +8,7 @@ import com.qzkt.timetable.data.book.Book
 import com.qzkt.timetable.data.book.BookSource
 import com.qzkt.timetable.data.book.BookSources
 import com.qzkt.timetable.data.book.BookStore
+import com.qzkt.timetable.data.book.CategorizedBookSource
 import com.qzkt.timetable.data.book.NlcCatalog
 import com.qzkt.timetable.data.book.NlcRecord
 import com.qzkt.timetable.data.book.NlcSearchPage
@@ -17,6 +18,18 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** 书城分类浏览的状态。 */
+data class StoreCategoryState(
+    val categoryId: String = "",
+    val page: Int = 0,
+    val books: List<OnlineBook> = emptyList(),
+    val hasNext: Boolean = false,
+    val loading: Boolean = false,
+    val error: String? = null,
+    /** 翻页时 true：新页追加到已有列表后面。 */
+    val append: Boolean = false,
+)
 
 /** 国图检索页面的状态。 */
 data class NlcUiState(
@@ -43,6 +56,21 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
 
     private val _night = MutableStateFlow(false)
     val night: StateFlow<Boolean> = _night
+
+    /** 在线书源 key（设置页可切换）。 */
+    private val _sourceKey = MutableStateFlow("quanben5")
+    val sourceKey: StateFlow<String> = _sourceKey
+
+    val onlineSource: CategorizedBookSource
+        get() = BookSources.byKey(_sourceKey.value) as? CategorizedBookSource
+            ?: BookSources.all.filterIsInstance<CategorizedBookSource>().first()
+
+    /** 分类页签（显示名），书城分类栏用。 */
+    val categories: List<Pair<String, String>> get() = onlineSource.categories
+
+    /** 书城分类浏览状态。 */
+    private val _category = MutableStateFlow(StoreCategoryState())
+    val category: StateFlow<StoreCategoryState> = _category
 
     /** 书城搜索状态。 */
     private val _searchResults = MutableStateFlow<List<OnlineBook>?>(null)
@@ -147,6 +175,57 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
 
     fun setNight(night: Boolean) {
         viewModelScope.launch { store.setReaderNight(night) }
+    }
+
+    fun setOnlineSource(key: String) {
+        if (key == _sourceKey.value) return
+        viewModelScope.launch {
+            store.selectSource(key)
+            _sourceKey.value = key
+            _category.value = StoreCategoryState()   // 换源后分类从头来
+        }
+    }
+
+    /** 打开一个分类（加载第 1 页）。 */
+    fun openCategory(categoryId: String) {
+        val state = _category.value
+        if (state.categoryId == categoryId && state.books.isNotEmpty()) return
+        loadCategoryPage(categoryId, 1)
+    }
+
+    /** 分类翻页（追加）。 */
+    fun categoryNextPage() {
+        val state = _category.value
+        if (state.loading || !state.hasNext) return
+        loadCategoryPage(state.categoryId, state.page + 1)
+    }
+
+    private fun loadCategoryPage(categoryId: String, page: Int) {
+        viewModelScope.launch {
+            _category.value = _category.value.copy(
+                categoryId = categoryId,
+                loading = true,
+                error = null,
+                append = page > 1,
+            )
+            runCatching { onlineSource.categoryBooks(categoryId, page) }
+                .onSuccess { result ->
+                    _category.value = _category.value.copy(
+                        loading = false,
+                        page = page,
+                        hasNext = result.hasNext,
+                        books = if (page > 1) _category.value.books + result.books else result.books,
+                    )
+                }
+                .onFailure { e ->
+                    _category.value = _category.value.copy(loading = false, error = e.message ?: "加载失败")
+                }
+        }
+    }
+
+    /** 设置页「图书数据管理」：清空书架。 */
+    fun clearAllBooks() {
+        viewModelScope.launch { store.clearAllBooks() }
     }
 }
 
