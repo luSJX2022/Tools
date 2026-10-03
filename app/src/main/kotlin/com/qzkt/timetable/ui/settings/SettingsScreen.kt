@@ -263,27 +263,32 @@ private fun BookSettingsCard(viewModel: BookViewModel, animeFavoriteCount: Int) 
     val sourceName = viewModel.onlineSource.name
     val fontSize by viewModel.fontSize.collectAsStateWithLifecycle()
     val night by viewModel.night.collectAsStateWithLifecycle()
+    val selectedSourceKey by viewModel.sourceKey.collectAsStateWithLifecycle()
     val books by viewModel.books.collectAsStateWithLifecycle()
     var confirmClearBooks by remember { mutableStateOf(false) }
 
     SectionCard("图书") {
-        // 书源（目前内置一个，后续加源后这里直接出现选项）
+        // 在线书源：单选切换（某个源连不上就换一个）
         Text("在线书源", fontSize = 14.sp)
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.MenuBook,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = "$sourceName（搜书 / 分类 / 在线阅读）",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
+        Spacer(Modifier.height(6.dp))
+        viewModel.availableSources.forEach { source ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.setOnlineSource(source.key) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = source.key == selectedSourceKey,
+                    onClick = { viewModel.setOnlineSource(source.key) },
+                )
+                Text(
+                    text = source.name,
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 

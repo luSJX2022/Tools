@@ -143,8 +143,8 @@ fun BookshelfScreen(
                 "store" -> {
                     // 进书城时什么都不做就空着不好看：没有搜索结果也没选分类时，自动加载第一个分类
                     LaunchedEffect(categoryState.categoryId, searchResults, tab) {
-                        if (categoryState.categoryId.isEmpty() && searchResults == null &&
-                            searchError == null && !searching
+                        if (viewModel.categories.isNotEmpty() && categoryState.categoryId.isEmpty() &&
+                            searchResults == null && searchError == null && !searching
                         ) {
                             viewModel.categories.firstOrNull()?.second?.let { viewModel.openCategory(it) }
                         }
@@ -256,19 +256,21 @@ private fun StoreTab(
                     }
                 }
 
-                // 分类栏（横向滚动）
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                ) {
-                    categories.forEach { (label, id) ->
-                        FilterChip(
-                            selected = category.categoryId == id,
-                            onClick = { onOpenCategory(id) },
-                            label = { Text(label, fontSize = 13.sp) },
-                        )
+                if (categories.isNotEmpty()) {
+                    // 分类栏（横向滚动）
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        categories.forEach { (label, id) ->
+                            FilterChip(
+                                selected = category.categoryId == id,
+                                onClick = { onOpenCategory(id) },
+                                label = { Text(label, fontSize = 13.sp) },
+                            )
+                        }
                     }
                 }
 
@@ -314,6 +316,8 @@ private fun StoreTab(
                 }
             }
             // 搜索结果
+            category.categoryId.isEmpty() && results == null && searchError == null && !searching ->
+                item { StoreHint("输入关键词搜索，或点上方分类浏览", center = false) }
             searching -> item { StoreHint("搜索中…", center = true) }
             searchError != null -> item {
                 Text(

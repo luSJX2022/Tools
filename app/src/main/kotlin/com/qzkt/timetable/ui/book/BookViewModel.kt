@@ -58,12 +58,15 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
     val night: StateFlow<Boolean> = _night
 
     /** 在线书源 key（设置页可切换）。 */
-    private val _sourceKey = MutableStateFlow("quanben5")
+    private val _sourceKey = MutableStateFlow("kunnu8")
     val sourceKey: StateFlow<String> = _sourceKey
 
     val onlineSource: CategorizedBookSource
         get() = BookSources.byKey(_sourceKey.value) as? CategorizedBookSource
             ?: BookSources.all.filterIsInstance<CategorizedBookSource>().first()
+
+    /** 全部内置在线书源（设置页列出来供切换）。 */
+    val availableSources: List<BookSource> get() = BookSources.all
 
     /** 分类页签（显示名），书城分类栏用。 */
     val categories: List<Pair<String, String>> get() = onlineSource.categories

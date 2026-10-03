@@ -21,8 +21,8 @@ private val Context.bookDataStore: DataStore<Preferences> by preferencesDataStor
 
 @Serializable
 private data class BookStoreData(
-    /** 选中的在线书源 key（对应 BookSources.byKey）。 */
-    val sourceKey: String = "quanben5",
+    /** 选中的在线书源 key（对应 BookSources.byKey）。默认鲲弩（国内手机可达）。 */
+    val sourceKey: String = "kunnu8",
     val books: List<Book> = emptyList(),
     /** 阅读页正文字号（sp），全库共用。 */
     val readerFontSize: Int = 18,
