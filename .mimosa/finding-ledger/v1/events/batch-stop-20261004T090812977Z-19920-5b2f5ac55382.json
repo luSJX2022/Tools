@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261004T090812977Z-19920-5b2f5ac55382",
+  "runId": "20261004T090812977Z-19920-5b2f5ac55382",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "9826ce454818bb7435cdc79d7708c7cb1d921f04",
+  "diffHash": "ad430c42f7c42a2c34219b86a63d3692d85f2cccc6e205050df043a035b3691f",
+  "rulesVersion": "unavailable",
+  "sessionHash": "e962151cbe124c0f91610502e08dde0da23fa65880da08965ba6f4f24ade52bd",
+  "reportRef": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c-20261004T090812977Z-19920-5b2f5ac55382.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/ui/player/PlayerScreen.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "app/build.gradle.kts",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-04T09:08:13.339Z"
+}

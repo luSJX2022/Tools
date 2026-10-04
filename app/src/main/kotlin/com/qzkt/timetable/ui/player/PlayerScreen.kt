@@ -487,7 +487,7 @@ fun PlayerScreen(
             }
 
             // 解析 / 选集跳过来时的作品简介（保存在 savedDescription，不随 playRequest 消费而消失）
-            savedDescription?.takeIf { it.isNotBlank() && it != currentName }?.let { description ->
+            savedDescription?.takeIf { it.isNotBlank() }?.let { description ->
                 Spacer(Modifier.height(12.dp))
                 var expanded by remember { mutableStateOf(false) }
                 Text(

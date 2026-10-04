@@ -54,9 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -135,6 +133,8 @@ fun PlayerScreen(
 
     var showEpisodes by rememberSaveable { mutableStateOf(false) }
     var showQuality by rememberSaveable { mutableStateOf(false) }
+    // 简介在 playRequest 被消费（置 null）后就没了，用 rememberSaveable 存一份常驻显示
+    var savedDescription by rememberSaveable { mutableStateOf<String?>(null) }
     // 快捷手势的提示气泡（横滑快进/快退、亮度、音量拖动时显示）
     var gestureHint by remember { mutableStateOf<String?>(null) }
     // 当前正在播的分辨率高（清晰度按钮文案 + 菜单标题用）
@@ -167,7 +167,7 @@ fun PlayerScreen(
         }
     }
 
-    // 离开播放器页时保证横屏/隐藏状态栏都被还原，别把整个应用卡在横屏
+    // 离开播放器页时恢复屏幕方向（暂停在连接层的 onDispose 里做）
     DisposableEffect(activity) {
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -178,7 +178,7 @@ fun PlayerScreen(
     }
 
     // 离开播放器页时暂停播放（后台服务还在，回来接着看；不是停止）
-    DisposableEffect(Unit) {
+    DisposableEffect(controller) {
         onDispose { controller?.pause() }
     }
 
@@ -191,6 +191,8 @@ fun PlayerScreen(
             ContextCompat.getMainExecutor(context),
         )
         onDispose {
+            // 退出播放页时暂停（连接层的 onDispose 最后执行，controller 还没被清掉）
+            controller?.pause()
             controller = null
             MediaController.releaseFuture(future)
         }
@@ -202,6 +204,7 @@ fun PlayerScreen(
         StreamHeaders.clear()
         // 解析页过来的普通流地址不带标题（title 为空），回退用地址末段当标题
         resolvedTitle = request.title.ifBlank { null }
+        savedDescription = request.description?.takeIf { it.isNotBlank() }
         currentSource = request.url
         lastError = null
         pendingUriText = request.url
@@ -404,11 +407,11 @@ fun PlayerScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            // 视频画面：占满宽度按 16:9 撑高（窄屏不低于 260dp），控制条里的按钮点开的暗色菜单盖在画面上
+            // 视频画面：比原来 260dp 更大，留出控制条空间
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(videoHeight2()),
+                    .height(320.dp),
             ) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -483,8 +486,8 @@ fun PlayerScreen(
                 )
             }
 
-            // 解析 / 选集跳过来时的作品简介（链接解析的普通直链没有简介，不显示）
-            playRequest?.description?.takeIf { it.isNotBlank() && it != playRequest.title }?.let { description ->
+            // 解析 / 选集跳过来时的作品简介（保存在 savedDescription，不随 playRequest 消费而消失）
+            savedDescription?.takeIf { it.isNotBlank() }?.let { description ->
                 Spacer(Modifier.height(12.dp))
                 var expanded by remember { mutableStateOf(false) }
                 Text(
@@ -508,13 +511,6 @@ fun PlayerScreen(
             }
         }
     }
-}
-
-/** 播放页视频区高度：屏宽的 9/16，窄屏不低于 260dp。 */
-@Composable
-private fun videoHeight2(): Dp {
-    val widthDp = LocalConfiguration.current.screenWidthDp.toFloat()
-    return (widthDp * 9f / 16f).dp.coerceAtLeast(260.dp)
 }
 
 /** 手势提示气泡：横滑快进/快退、亮度、音量拖动时显示在画面中央。 */
