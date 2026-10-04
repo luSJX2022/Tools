@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-10-04T08:01:36.657Z",
+  "sessionId": "sess_89322dca-5737-430a-be58-8ce9097b927c",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "app/build.gradle.kts",
+  "outcome": "inconclusive",
+  "coverage": "partial",
+  "findingCount": 0,
+  "durationMs": 15,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

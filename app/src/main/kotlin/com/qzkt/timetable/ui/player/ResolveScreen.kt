@@ -259,6 +259,7 @@ fun ResolveScreen(
                             AnimePlayRequest(
                                 url = media.url,
                                 title = media.title ?: "",
+                                description = media.description,
                             ),
                         )
                     },

@@ -33,11 +33,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -122,7 +120,7 @@ fun PlayerScreen(
     var lastError by remember { mutableStateOf<String?>(null) }
     var lyricIndex by remember { mutableStateOf(-1) }
     var positionMs by remember { mutableStateOf(0L) }
-    var shuffle by remember { mutableStateOf(false) }
+    // 番剧播放上下文：有它播放器里才显示「选集」。
     // 解析出来的标题（B站/抖音的地址是 CDN 直链，光看地址看不出是什么视频）
     var resolvedTitle by rememberSaveable { mutableStateOf<String?>(null) }
     // 下载：进度、结果提示，以及下完之后那条本地地址（可以直接接着播）
@@ -212,8 +210,6 @@ fun PlayerScreen(
         c.playWhenReady = true
         pendingUriText = null   // 消费掉，重建时不会再放一遍
     }
-
-    LaunchedEffect(controller, shuffle) { controller?.shuffleModeEnabled = shuffle }
 
     // 推进歌词（Media3 没有逐帧回调，轮询取位置）。
     // 没歌词（看视频/番剧）时不碰任何状态 —— 全页每 200ms 重组一遍纯属浪费，
@@ -455,19 +451,6 @@ fun PlayerScreen(
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconToggleButton(
-                    checked = shuffle,
-                    onCheckedChange = { shuffle = it },
-                ) {
-                    Icon(Icons.Default.Shuffle, contentDescription = "随机")
-                }
-            }
-
             if (downloading) {
                 val progress = downloadProgress
                 if (progress != null && progress >= 0f) {
@@ -486,6 +469,30 @@ fun PlayerScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+            }
+
+            // 解析 / 选集跳过来时的作品简介（链接解析的普通直链没有简介，不显示）
+            playRequest?.description?.takeIf { it.isNotBlank() && it != playRequest.title }?.let { description ->
+                Spacer(Modifier.height(12.dp))
+                var expanded by remember { mutableStateOf(false) }
+                Text(
+                    text = "简介",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) Int.MAX_VALUE else 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
         }

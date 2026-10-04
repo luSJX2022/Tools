@@ -72,4 +72,6 @@ data class AnimePlayRequest(
     val episodes: List<Episode> = emptyList(),
     /** 当前集的下标（0 起）。 */
     val currentIndex: Int = 0,
+    /** 作品简介（B站 desc / 抖音文案）；链接解析时带过来显示在播放页底部。 */
+    val description: String? = null,
 )
