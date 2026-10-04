@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.view.LayoutInflater
+import android.view.WindowManager
 import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -142,6 +143,8 @@ fun PlayerScreen(
     // 当前正在播的分辨率高（清晰度按钮文案 + 菜单标题用）
     var videoHeight by remember { mutableStateOf(0) }
     val qualityLabel = if (videoHeight > 0) "${videoHeight}P" else "清晰度"
+    // 正在播放时给窗口加 FLAG_KEEP_SCREEN_ON，看视频不自动息屏；暂停就恢复
+    var isPlaying by remember { mutableStateOf(false) }
 
     val currentName = remember(context, currentSource, resolvedTitle) {
         resolvedTitle ?: currentSource?.let { nameOf(context, it) }
@@ -176,6 +179,30 @@ fun PlayerScreen(
             activity?.window?.decorView?.let {
                 WindowCompat.getInsetsController(activity.window, it).show(WindowInsetsCompat.Type.systemBars())
             }
+            // 页面不在了，「保持常亮」的旗标也得跟着撤，不能留到别的页面
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // 播放中不自动息屏：跟住播放状态加/撤 FLAG_KEEP_SCREEN_ON。
+    // 暂停、播完、报错都撤掉，息屏交给系统，免得停在暂停页把电量耗光。
+    DisposableEffect(controller) {
+        val c = controller ?: return@DisposableEffect onDispose { }
+        isPlaying = c.isPlaying
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+        }
+        c.addListener(listener)
+        onDispose { c.removeListener(listener) }
+    }
+    LaunchedEffect(isPlaying, activity) {
+        val window = activity?.window ?: return@LaunchedEffect
+        if (isPlaying) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
