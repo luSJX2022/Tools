@@ -8,8 +8,8 @@ import com.qzkt.timetable.jw.JwSession
 import com.qzkt.timetable.jw.JwTermInfo
 import com.qzkt.timetable.jw.RawExchange
 import com.qzkt.timetable.jw.deriveFirstMonday
+import com.qzkt.timetable.jw.parse.GradesParser
 import com.qzkt.timetable.jw.parse.KbcxParser
-import com.qzkt.timetable.jw.parseGrades
 import com.qzkt.timetable.model.CourseSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -244,8 +244,7 @@ class QzAppDoAdapter(
             )
             val trimmed = body.trim()
             if (trimmed.isEmpty() || trimmed == "null") return@withContext null
-            val parsed = parseGrades(trimmed)
-            if (parsed.isEmpty()) null else parsed
+            parseGrades(trimmed).ifEmpty { null }
         }
 
         override fun close() {

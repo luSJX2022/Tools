@@ -49,6 +49,9 @@ import com.qzkt.timetable.ui.book.BookshelfScreen
 import com.qzkt.timetable.ui.book.BookViewModel
 import com.qzkt.timetable.ui.book.BookViewModelFactory
 import com.qzkt.timetable.ui.book.ReaderScreen
+import com.qzkt.timetable.ui.grades.GradesScreen
+import com.qzkt.timetable.ui.grades.GradesViewModel
+import com.qzkt.timetable.ui.grades.GradesViewModelFactory
 import com.qzkt.timetable.ui.tools.ToolsScreen
 import com.qzkt.timetable.ui.web.WebImportScreen
 
@@ -65,6 +68,8 @@ private object Routes {
     const val BOOK = "book"
     /** 参数是书籍 id。 */
     const val BOOK_READ = "book_read/{bookId}"
+    /** 成绩页。 */
+    const val GRADES = "grades"
     /** 参数是资源站里的番剧 id。 */
     const val ANIME_DETAIL = "anime_detail/{vodId}"
     const val CHANGES = "changes"
@@ -83,6 +88,7 @@ private val TOOLS_SUB_PAGES = setOf(
     Routes.ANIME,
     Routes.BOOK,
     Routes.BOOK_READ,
+    Routes.GRADES,
     Routes.CHANGES,
     Routes.ACCOUNT,
 )
@@ -100,6 +106,7 @@ fun QzktApp(
     viewModel: MainViewModel,
     animeViewModel: AnimeViewModel,
     bookViewModel: BookViewModel,
+    gradesViewModel: GradesViewModel,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
@@ -236,6 +243,7 @@ fun QzktApp(
                         onOpenTimetable = { navController.navigate(Routes.TIMETABLE) },
                         onOpenResolve = { navController.navigate(Routes.RESOLVE) },
                         onOpenBooks = { navController.navigate(Routes.BOOK) },
+                            onOpenGrades = { navController.navigate(Routes.GRADES) },
                         onOpenAnime = { navController.navigate(Routes.ANIME) },
                     )
                 }

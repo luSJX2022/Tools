@@ -86,6 +86,9 @@ interface JwSession {
      */
     suspend fun loadWholeTerm(): List<CourseSession>? = null
 
+    /** 读取成绩（含学分）。有些学校的接口不支持，返回 null。 */
+    suspend fun loadGrades(): List<GradeInfo>? = null
+
     /** 释放连接资源。 */
     fun close()
 }

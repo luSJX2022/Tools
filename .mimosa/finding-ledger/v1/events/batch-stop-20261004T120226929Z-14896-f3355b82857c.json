@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261004T120226929Z-14896-f3355b82857c",
+  "runId": "20261004T120226929Z-14896-f3355b82857c",
+  "runStatus": "inconclusive",
+  "coverage": {
+    "status": "partial",
+    "reasons": [
+      {
+        "code": "baseline_partial",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline capture had enumeration or snapshot errors",
+        "affectsCompletion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline_partial: baseline capture had enumeration or snapshot errors",
+        "affectsCompletion": true
+      }
+    ]
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "c07741a2380d1b99e8a19dcf85b54dccdd2f68fa",
+  "diffHash": "43a057c7afb9c229dc13bf22b25b1727fd4b9081aa6072f664955db98dbb51bc",
+  "rulesVersion": "unavailable",
+  "sessionHash": "e962151cbe124c0f91610502e08dde0da23fa65880da08965ba6f4f24ade52bd",
+  "reportRef": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c-20261004T120226929Z-14896-f3355b82857c.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "app/build.gradle.kts",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-04T12:02:27.256Z"
+}
