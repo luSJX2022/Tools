@@ -511,9 +511,9 @@ fun PlayerScreen(
 }
 
 /** 播放页视频区高度：屏宽的 9/16，窄屏不低于 260dp。 */
-@Composable
 private fun videoHeight2(): Dp {
-    val widthDp = LocalConfiguration.current.screenWidthDp.toFloat()
+    val config = LocalConfiguration.current
+    val widthDp = config.screenWidthDp.toFloat()
     return (widthDp * 9f / 16f).dp.coerceAtLeast(260.dp)
 }
 
