@@ -1,0 +1,306 @@
+package com.qzkt.timetable.jw.qz
+
+import com.qzkt.timetable.jw.JwAdapter
+import com.qzkt.timetable.jw.JwConfig
+import com.qzkt.timetable.jw.JwException
+import com.qzkt.timetable.jw.JwSession
+import com.qzkt.timetable.jw.JwTermInfo
+import com.qzkt.timetable.jw.RawExchange
+import com.qzkt.timetable.jw.deriveFirstMonday
+import com.qzkt.timetable.jw.parse.KbcxParser
+import com.qzkt.timetable.model.CourseSession
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.nio.charset.Charset
+import java.time.LocalDate
+import java.util.concurrent.TimeUnit
+
+/**
+ * 强智教务系统「移动端 app.do 接口」适配器。
+ *
+ * 接口约定（由多个开源实现交叉验证）：
+ * ```
+ * GET {base}?method=authUser&xh={学号}&pwd={密码}
+ *   → {"flag":"1","msg":"...","token":"..."}
+ *   之后所有请求带请求头 token: <token>
+ *
+ * GET {base}?method=getCurrentTime&currDate=yyyy-MM-dd
+ *   → {"xnxqh":"2026-2027-1","zc":"3", ...}
+ *
+ * GET {base}?method=getKbcxAzc&xh={学号}&xnxqid={xnxqh}&zc={周次}
+ *   → [ {...}, ... ]  字段名各校有差异，交给 KbcxParser 容错解析
+ * ```
+ */
+class QzAppDoAdapter(
+    /**
+     * 每次登录新建一个客户端。
+     *
+     * 会话在 [JwSession.close] 里会关掉自己的客户端，如果整个 App 共用同一个实例，
+     * 第一次同步结束后后续同步就全废了，所以这里按会话隔离。
+     */
+    private val clientFactory: () -> OkHttpClient = ::defaultClient,
+) : JwAdapter {
+
+    override val id: String = ID
+    override val displayName: String = "强智（app.do 移动端接口）"
+
+    override suspend fun connect(config: JwConfig): JwSession = withContext(Dispatchers.IO) {
+        val endpoint = resolveEndpoint(config.baseUrl)
+        // 用户只填了域名时默认按 https 试；学校的强智很多还是 http，所以连不上就换一个协议再来一次
+        val candidates = if (config.baseUrl.contains("://")) {
+            listOf(endpoint)
+        } else {
+            listOf(endpoint, endpoint.replaceFirst("https://", "http://"))
+        }
+
+        var lastError: JwException? = null
+        for (candidate in candidates) {
+            try {
+                val session = QzAppDoSession(candidate, config.username, clientFactory())
+                session.login(config.password)
+                return@withContext session
+            } catch (e: JwException) {
+                lastError = e
+                // 只有"连不上"才值得换协议；账号密码错、返回格式不对重试也没用
+                if (!e.connectivity) throw e
+            }
+        }
+        throw lastError ?: JwException("连接失败，请检查学校地址")
+    }
+
+    companion object {
+        const val ID = "qz-appdo"
+
+        /** 手机端 UA，部分学校会按 UA 返回不同格式。 */
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Linux; U; Mobile; Android 13; zh-cn) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
+
+        private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .cookieJar(InMemoryCookieJar())
+            .build()
+
+        /**
+         * 把用户填的地址规整成 `.../app.do`。
+         *
+         * 用户可能填 `http://jwgl.x.edu.cn`、`http://jwgl.x.edu.cn/`、
+         * `http://jwgl.x.edu.cn/app.do`，甚至带 query 的完整请求，都要能认。
+         */
+        fun resolveEndpoint(rawInput: String): String {
+            var text = rawInput.trim()
+            if (text.isEmpty()) throw JwException("请先填写学校强智教务系统地址")
+
+            if (!text.startsWith("http://", true) && !text.startsWith("https://", true)) {
+                text = "https://$text"
+            }
+            // 去掉 query 与 fragment
+            text = text.substringBefore('?').substringBefore('#').trimEnd('/')
+
+            return when {
+                text.endsWith(".do", ignoreCase = true) -> text
+                text.endsWith("/app.do", ignoreCase = true) -> text
+                else -> "$text/app.do"
+            }
+        }
+    }
+
+    private class InMemoryCookieJar : CookieJar {
+        private val store = mutableMapOf<String, MutableList<Cookie>>()
+
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            val list = store.getOrPut(url.host) { mutableListOf() }
+            cookies.forEach { cookie ->
+                list.removeAll { it.name == cookie.name }
+                list += cookie
+            }
+        }
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> = store[url.host].orEmpty()
+    }
+
+    private class QzAppDoSession(
+        private val endpoint: String,
+        private val username: String,
+        private val client: OkHttpClient,
+    ) : JwSession {
+
+        private val log = ArrayDeque<RawExchange>()
+        private var token: String? = null
+        private var term: JwTermInfo? = null
+
+        override var studentName: String? = null
+            private set
+
+        override val rawLog: List<RawExchange> get() = log.toList()
+
+        fun login(password: String) {
+            val body = call(
+                label = "① 登录 authUser",
+                params = mapOf("method" to "authUser", "xh" to username, "pwd" to password),
+                needToken = false,
+            )
+
+            val obj = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
+                ?: JwException(
+                    "登录失败：学校返回的不是 JSON，这个地址上大概没有 app.do 移动端接口。" +
+                        "返回内容开头：${body.take(120)}",
+                ).also { it.wrongProtocol = true }.let { throw it }
+
+            val flag = obj.stringOrNull("flag")
+            if (flag != "1" && flag != "true") {
+                val msg = obj.stringOrNull("msg") ?: obj.stringOrNull("message") ?: "账号或密码错误"
+                throw JwException("登录失败：$msg")
+            }
+
+            token = obj.stringOrNull("token")
+                ?: throw JwException("登录成功但未返回 token，该学校可能不是 app.do 接口，请改用 Web 导入")
+
+            studentName = obj.stringOrNull("user")
+                ?: (obj["user"] as? JsonObject)?.stringOrNull("name")
+        }
+
+        override suspend fun loadTerm(): JwTermInfo = withContext(Dispatchers.IO) {
+            val body = call(
+                label = "② 当前学期/周次 getCurrentTime",
+                params = mapOf(
+                    "method" to "getCurrentTime",
+                    "currDate" to LocalDate.now().toString(),
+                ),
+                needToken = true,
+            )
+
+            val obj = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
+                ?: throw JwException("获取学期信息失败：返回内容不是 JSON。开头：${body.take(120)}")
+
+            val flat = obj.mapValues { (_, v) ->
+                when (v) {
+                    is JsonPrimitive -> v.content
+                    else -> v.toString()
+                }
+            }
+            val currentWeek = flat["zc"]?.toIntOrNull()?.takeIf { it in 1..40 }
+
+            val xnxqh = obj.stringOrNull("xnxqh")
+                ?: obj.stringOrNull("xnxq")
+                ?: obj.stringOrNull("xq")
+                ?: ""
+
+            val explicitStart = listOf("s_time", "startdate", "startDate", "xqksrq", "kssj", "termStart")
+                .firstNotNullOfOrNull { key -> obj.stringOrNull(key)?.let { parseDate(it) } }
+
+            val info = JwTermInfo(
+                xnxqh = xnxqh,
+                currentWeek = currentWeek,
+                firstMonday = explicitStart ?: currentWeek?.let { deriveFirstMonday(LocalDate.now(), it) },
+                raw = flat,
+            )
+            term = info
+            info
+        }
+
+        override suspend fun loadWeek(week: Int): List<CourseSession> = withContext(Dispatchers.IO) {
+            val termInfo = term ?: loadTerm()
+            val params = mutableMapOf(
+                "method" to "getKbcxAzc",
+                "xh" to username,
+                "zc" to week.toString(),
+            )
+            if (termInfo.xnxqh.isNotBlank()) params["xnxqid"] = termInfo.xnxqh
+
+            val body = call(label = "③ 第 $week 周课表 getKbcxAzc", params = params, needToken = true)
+            val trimmed = body.trim()
+            if (trimmed.isEmpty() || trimmed == "null") return@withContext emptyList()
+
+            // 合法的空数组表示这一周没课；不是 JSON 才说明地址或版本不对
+            if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+                throw JwException("第 $week 周课表返回的不是 JSON（可能是地址填错了），内容开头：${trimmed.take(120)}")
+            }
+
+            // 结果归一到"这一周"，周次由调用方（按周同步）决定
+            KbcxParser.parseJson(body).sessions.map { it.copy(weeks = listOf(week)) }
+        }
+
+        override fun close() {
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+
+        private fun call(label: String, params: Map<String, String>, needToken: Boolean): String {
+            val urlBuilder = endpoint.toHttpUrlOrNull()?.newBuilder()
+                ?: throw JwException("地址格式不对：$endpoint")
+            params.forEach { (k, v) -> urlBuilder.addQueryParameter(k, v) }
+            val url = urlBuilder.build()
+
+            val requestBuilder = Request.Builder().url(url).get().header("User-Agent", USER_AGENT)
+            if (needToken) {
+                val t = token ?: throw JwException("会话已失效，请重新登录")
+                requestBuilder.header("token", t)
+            }
+
+            val redactedUrl = url.toString().replace(Regex("pwd=[^&]*"), "pwd=***")
+
+            try {
+                client.newCall(requestBuilder.build()).execute().use { response ->
+                    // 用 peekBody 而不是 body：OkHttp 4/5 之间 body 的可空性变过，peekBody 一直是非空
+                    val bytes = response.peekBody(Long.MAX_VALUE).bytes()
+                    val text = decodeBody(bytes, response.header("Content-Type"))
+                    val ok = response.isSuccessful
+                    log.addFirst(RawExchange(label = label, url = redactedUrl, responseSnippet = text.take(4000), ok = ok))
+                    if (!ok) throw JwException("$label 失败：HTTP ${response.code}")
+                    return text
+                }
+            } catch (e: JwException) {
+                throw e
+            } catch (e: Exception) {
+                log.addFirst(
+                    RawExchange(
+                        label = label,
+                        url = redactedUrl,
+                        responseSnippet = e.message ?: e.toString(),
+                        ok = false,
+                    ),
+                )
+                throw JwException(
+                    message = "$label 请求失败：${e.message ?: e.javaClass.simpleName}",
+                    cause = e,
+                    connectivity = e is java.io.IOException,
+                )
+            }
+        }
+
+        /** 强智有的学校返回 GBK，先按 UTF-8 解，出现替换字符再退回 GBK。 */
+        private fun decodeBody(bytes: ByteArray, contentType: String?): String {
+            val declared = contentType?.let { Regex("charset=([\\w-]+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1) }
+            if (declared != null) {
+                val cs = runCatching { Charset.forName(declared) }.getOrNull()
+                if (cs != null) return String(bytes, cs)
+            }
+            val utf8 = String(bytes, Charsets.UTF_8)
+            if (utf8.none { it == '\uFFFD' }) return utf8
+            return runCatching { String(bytes, Charset.forName("GBK")) }.getOrDefault(utf8)
+        }
+
+        private fun parseDate(text: String): LocalDate? =
+            runCatching { LocalDate.parse(text.take(10)) }.getOrNull()
+
+        private fun JsonObject.stringOrNull(key: String): String? {
+            val value = this[key] as? JsonPrimitive ?: return null
+            val content = value.content
+            return content.takeIf { it.isNotBlank() && it != "null" }
+        }
+    }
+}

@@ -1,0 +1,106 @@
+"""生成假的课表数据，直接写进应用的私有目录，用来在没有学校账号的情况下验证界面。
+
+设置的存储是 DataStore 的 protobuf（PreferenceMap），所以这里手工编码最小的一份：
+    PreferenceMap { map<string, Value> preferences = 1; }
+    Value { string string = 5; }
+"""
+import json
+import os
+
+OUT = os.path.dirname(os.path.abspath(__file__))
+
+
+def varint(n: int) -> bytes:
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            return bytes(out)
+
+
+def len_delim(field: int, payload: bytes) -> bytes:
+    return varint((field << 3) | 2) + varint(len(payload)) + payload
+
+
+# ---------------------------------------------------------------- 设置
+
+settings = {
+    "baseUrl": "https://jw.hdxy.edu.cn/jsxsd",
+    "username": "20251836033",
+    "useWebImport": True,
+    # 2026-09-07 是周一
+    "firstMonday": "2026-09-07",
+    "weekCount": 20,
+    # 关掉后台同步，免得测试时冒通知；slots 不写，用默认值（就是学校那张 11 节的表）
+    "syncEnabled": False,
+    "remindEnabled": False,
+    "configured": True,
+}
+settings_json = json.dumps(settings, ensure_ascii=False).encode("utf-8")
+
+# PreferenceMap.preferences 是个 map：entry 本身又是 field 1 的嵌套消息
+#   field1(entry) { field1=key, field2=Value{ field5=string } }
+entry = len_delim(1, b"settings_json") + len_delim(2, len_delim(5, settings_json))
+prefs = len_delim(1, entry)
+with open(os.path.join(OUT, "prefs.pb"), "wb") as f:
+    f.write(prefs)
+
+
+# ---------------------------------------------------------------- 课表
+
+def session(name, teacher, room, day, start, end, weeks, cls=""):
+    return {
+        "id": f"{name}-{day}-{start}",
+        "name": name,
+        "teacher": teacher,
+        "room": room,
+        "dayOfWeek": day,
+        "startPeriod": start,
+        "endPeriod": end,
+        "weeks": weeks,
+        "teachingClass": cls,
+    }
+
+
+all_weeks = list(range(1, 19))
+odd_weeks = [w for w in range(1, 18) if w % 2 == 1]
+
+sessions = [
+    # 周一上午连堂
+    session("高等数学A", "王建国", "教学楼A301", 1, 1, 2, all_weeks, "计算机2025-1"),
+    session("大学英语", "李梅", "外语楼B205", 1, 3, 4, all_weeks, "英语A班"),
+    # 周一下午
+    session("程序设计基础", "张伟", "实验楼C402", 1, 5, 6, all_weeks, "计算机2025-1"),
+    # 周二
+    session("线性代数", "刘洋", "教学楼A208", 2, 1, 2, all_weeks),
+    session("体育", "赵强", "体育馆", 2, 7, 8, all_weeks),
+    # 周三
+    session("大学物理", "陈静", "教学楼B105", 3, 3, 4, all_weeks),
+    session("程序设计基础", "张伟", "实验楼C402", 3, 5, 6, all_weeks, "计算机2025-1"),
+    # 周四
+    session("离散数学", "孙丽", "教学楼A302", 4, 1, 2, all_weeks),
+    # 周五
+    session("大学英语", "李梅", "外语楼B205", 5, 3, 4, all_weeks, "英语A班"),
+    # 单双周示例：周一晚上只在单周上
+    session("形势与政策", "周涛", "教学楼A101", 4, 9, 10, odd_weeks),
+    # 连上四节的情况
+    session("工程实训", "马超", "实训中心", 5, 5, 8, list(range(1, 10))),
+]
+
+snapshot = {
+    "xnxqh": "2026-2027-1",
+    "firstMonday": "2026-09-07",
+    "weekCount": 20,
+    "sessions": sessions,
+    "updatedAt": 0,
+    "currentWeek": 3,
+}
+with open(os.path.join(OUT, "timetable.json"), "w", encoding="utf-8") as f:
+    json.dump(snapshot, f, ensure_ascii=False)
+
+print("prefs.pb", len(prefs), "字节")
+print("timetable.json", len(sessions), "条课程")
