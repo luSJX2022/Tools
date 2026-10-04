@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261004T091909410Z-11216-68895c1fb8ae",
+  "runId": "20261004T091909410Z-11216-68895c1fb8ae",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "9ed9beaffe39974e7d5d121410ee39b2aab05cfc",
+  "diffHash": "8bca45c0e560e531920e98ee85fa0f7f8d7976f7153b1c52ca92e1e0dd4eadd5",
+  "rulesVersion": "unavailable",
+  "sessionHash": "e962151cbe124c0f91610502e08dde0da23fa65880da08965ba6f4f24ade52bd",
+  "reportRef": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c-20261004T091909410Z-11216-68895c1fb8ae.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/ui/anime/AnimeViewModel.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "app/build.gradle.kts",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-04T09:19:09.790Z"
+}

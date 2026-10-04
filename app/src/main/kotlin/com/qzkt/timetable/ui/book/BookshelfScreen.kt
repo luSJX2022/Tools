@@ -295,6 +295,11 @@ private fun StoreTab(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.error,
                             )
+                            Text(
+                                text = "书源「$currentSourceName」连不上时，去 设置 →「图书」换一个书源再试",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                             TextButton(onClick = { onOpenCategory(category.categoryId) }) { Text("重试") }
                         }
                     }

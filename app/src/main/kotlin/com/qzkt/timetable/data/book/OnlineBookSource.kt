@@ -216,7 +216,8 @@ object BookSources {
  * 书页的 `div.book-list a` 是全部章节（绝对地址）；
  * 正文在章节页的 `#nr_body`，正文里混着「鲲`弩`小`说 w w w …」广告行，逐行剔除。
  *
- * 已知限制：站点没有分类页（分类只是导航），这个源不支持分类浏览，只支持搜索。
+ * 分类：世界名著 / 影视原著 / 悬疑推理 / 畅销文学 / 言情穿越 / 编辑精选。
+ * 正文在章节页的 `#nr_body`，正文里混着「鲲`弩`小`说 w w w …」广告行，逐行剔除。
  */
 class Kunnu8Source(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -224,10 +225,39 @@ class Kunnu8Source(
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
     private val baseUrl: String = "https://www.kunnu8.com",
-) : BookSource {
+) : BookSource, CategorizedBookSource {
 
     override val key = "kunnu8"
     override val name = "鲲弩小说"
+
+    override val categories: List<Pair<String, String>> = listOf(
+        "世界名著" to "mingzhu",
+        "影视原著" to "yuanzhu",
+        "悬疑推理" to "xuanyi",
+        "畅销文学" to "hot",
+        "言情穿越" to "yanqing",
+        "编辑精选" to "hao",
+    )
+
+    /** 分类页 `div.pop-books2` 里是带封面 / 书名 / 简介的书卡，没有翻页。 */
+    override suspend fun categoryBooks(categoryId: String, page: Int): OnlineBookPage =
+        withContext(Dispatchers.IO) {
+            if (page > 1) return@withContext OnlineBookPage(emptyList(), hasNext = false)
+            val doc = fetchDoc("/$categoryId/")
+            val books = doc.select(".pop-books2 .pop-book2").mapNotNull { block ->
+                val href = block.selectFirst("a[href]")?.attr("href")?.trim() ?: return@mapNotNull null
+                val name = block.selectFirst(".pop-tit")?.text()?.trim() ?: return@mapNotNull null
+                if (name.isBlank() || href.isBlank()) return@mapNotNull null
+                OnlineBook(
+                    sourceKey = key,
+                    bookUrl = href,
+                    name = name,
+                    cover = block.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() },
+                    description = block.selectFirst(".pop-intro")?.attr("title")?.ifBlank { null },
+                )
+            }
+            OnlineBookPage(books = books, hasNext = false)
+        }
 
     override suspend fun search(keyword: String): List<OnlineBook> = withContext(Dispatchers.IO) {
         val kw = keyword.trim()

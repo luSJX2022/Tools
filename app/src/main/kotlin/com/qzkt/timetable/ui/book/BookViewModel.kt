@@ -95,6 +95,15 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
         }
         viewModelScope.launch { store.readerFontSize.collect { _fontSize.value = it } }
         viewModelScope.launch { store.readerNight.collect { _night.value = it } }
+        // 持久化的书源选择要真的生效（否则重启后总用硬编码的那个）
+        viewModelScope.launch {
+            store.selectedSource.collect { key ->
+                if (key.isNotBlank() && key != _sourceKey.value) {
+                    _sourceKey.value = key
+                    _category.value = StoreCategoryState()   // 换源后分类重新加载
+                }
+            }
+        }
     }
 
     /** 书城搜书（用当前选中的在线书源）。 */
