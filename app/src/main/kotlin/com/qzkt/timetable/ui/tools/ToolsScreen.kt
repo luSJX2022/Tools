@@ -51,6 +51,8 @@ fun ToolsScreen(
     animeFavoriteCount: Int = 0,
     /** 还没配置教务账号时，课表入口直接说清楚要先去配置。 */
     configured: Boolean = true,
+    /** 被用户在「设置 → 个性化」里藏起来的入口 key（timetable / book / resolve / anime）。 */
+    hiddenEntries: Set<String> = emptySet(),
     onOpenTimetable: () -> Unit,
     onOpenResolve: () -> Unit = {},
     onOpenBooks: () -> Unit = {},
@@ -68,41 +70,57 @@ fun ToolsScreen(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ToolEntry(
-                icon = Icons.Default.CalendarMonth,
-                title = "课表",
-                subtitle = when {
-                    !configured -> "还没配置教务账号，点进去配置"
-                    snapshot.firstMonday.isBlank() -> "还没设置开学日期，点进去补上"
-                    else -> {
-                        val weeks = if (snapshot.weekCount > 0) " · 共 ${snapshot.weekCount} 周" else ""
-                        "第 $currentWeek 周$weeks"
-                    }
-                },
-                onClick = onOpenTimetable,
-            )
-            ToolEntry(
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                title = "图书",
-                subtitle = "本地 TXT 小说：书架、进度记忆、夜间模式",
-                onClick = onOpenBooks,
-            )
-            ToolEntry(
-                icon = Icons.Default.Link,
-                title = "链接解析",
-                subtitle = "B站 / 抖音分享链接，解析后直接播放",
-                onClick = onOpenResolve,
-            )
-            ToolEntry(
-                icon = Icons.Default.Movie,
-                title = "影视",
-                subtitle = if (animeFavoriteCount > 0) {
-                    "收藏 $animeFavoriteCount 部 · 电影、剧集、动漫都能搜能看"
-                } else {
-                    "电影、剧集、动漫，搜索、收藏和在线播放"
-                },
-                onClick = onOpenAnime,
-            )
+            if ("timetable" !in hiddenEntries) {
+                ToolEntry(
+                    icon = Icons.Default.CalendarMonth,
+                    title = "课表",
+                    subtitle = when {
+                        !configured -> "还没配置教务账号，点进去配置"
+                        snapshot.firstMonday.isBlank() -> "还没设置开学日期，点进去补上"
+                        else -> {
+                            val weeks = if (snapshot.weekCount > 0) " · 共 ${snapshot.weekCount} 周" else ""
+                            "第 $currentWeek 周$weeks"
+                        }
+                    },
+                    onClick = onOpenTimetable,
+                )
+            }
+            if ("book" !in hiddenEntries) {
+                ToolEntry(
+                    icon = Icons.AutoMirrored.Filled.MenuBook,
+                    title = "图书",
+                    subtitle = "本地 TXT 小说：书架、进度记忆、夜间模式",
+                    onClick = onOpenBooks,
+                )
+            }
+            if ("resolve" !in hiddenEntries) {
+                ToolEntry(
+                    icon = Icons.Default.Link,
+                    title = "链接解析",
+                    subtitle = "B站 / 抖音分享链接，解析后直接播放",
+                    onClick = onOpenResolve,
+                )
+            }
+            if ("anime" !in hiddenEntries) {
+                ToolEntry(
+                    icon = Icons.Default.Movie,
+                    title = "影视",
+                    subtitle = if (animeFavoriteCount > 0) {
+                        "收藏 $animeFavoriteCount 部 · 电影、剧集、动漫都能搜能看"
+                    } else {
+                        "电影、剧集、动漫，搜索、收藏和在线播放"
+                    },
+                    onClick = onOpenAnime,
+                )
+            }
+            if (hiddenEntries.isNotEmpty()) {
+                Text(
+                    text = "部分入口已在「设置 → 个性化」里关闭",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
             Spacer(Modifier.height(24.dp))
         }
     }

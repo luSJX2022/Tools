@@ -30,6 +30,15 @@ data class AppSettings(
     val dynamicColor: Boolean = true,
     /** 课表上是否显示非本周的课（灰显）。 */
     val showOtherWeeks: Boolean = true,
+    /** 课表是否显示周六周日，关掉后只留周一到周五。 */
+    val showWeekend: Boolean = true,
+    /**
+     * 工具页（首页）要隐藏的入口 key：`timetable` / `book` / `resolve` / `anime`。
+     *
+     * 存「隐藏」而不是「显示」：列表缺省为空，老版本存的 JSON 没这个字段，
+     * 反序列化出来自然等于全显示，不用做迁移。
+     */
+    val hiddenToolKeys: List<String> = emptyList(),
     /** 是否已完成首次配置。 */
     val configured: Boolean = false,
     /**

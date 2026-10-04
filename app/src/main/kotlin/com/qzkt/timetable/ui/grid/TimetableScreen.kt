@@ -188,7 +188,12 @@ fun TimetableScreen(
                     )
                 }
 
-                WeekHeader(snapshot = snapshot, week = displayWeek, currentWeek = currentWeek)
+                WeekHeader(
+                    snapshot = snapshot,
+                    week = displayWeek,
+                    currentWeek = currentWeek,
+                    showWeekend = settings.showWeekend,
+                )
 
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                     WeekGrid(
@@ -293,15 +298,17 @@ private fun WeekDateRange(firstMonday: String, week: Int) {
 }
 
 @Composable
-private fun WeekHeader(snapshot: TimetableSnapshot, week: Int, currentWeek: Int) {
+private fun WeekHeader(snapshot: TimetableSnapshot, week: Int, currentWeek: Int, showWeekend: Boolean) {
     val today = remember { LocalDate.now() }
     val monday = snapshot.firstMonday.takeIf { it.isNotBlank() }
         ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    // 关掉周末时表头只留周一到周五，和下面的网格列数保持一致
+    val dayCount = if (showWeekend) 7 else 5
 
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
         Spacer(modifier = Modifier.width(TIME_COLUMN_WIDTH))
 
-        DAY_LABELS.forEachIndexed { index, label ->
+        DAY_LABELS.take(dayCount).forEachIndexed { index, label ->
             val isToday = week == currentWeek && today.dayOfWeek.value == index + 1
             val date = monday?.plusDays(((week - 1) * 7 + index).toLong())
             val accent = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
@@ -339,10 +346,18 @@ private fun WeekGrid(
     onCourseClick: (CourseSession) -> Unit,
 ) {
     val maxPeriod = remember(snapshot) { maxOf(snapshot.sessions.maxOfOrNull { it.endPeriod } ?: 10, 10) }
-    val inWeek = remember(snapshot, week) { snapshot.sessions.filter { week in it.weeks } }
-    val otherWeeks = remember(snapshot, week, settings.showOtherWeeks) {
+    // 关掉周末时网格只排 5 列，落在周六周日的课不画（设置里随时能打开）
+    val dayCount = if (settings.showWeekend) 7 else 5
+    val inWeek = remember(snapshot, week, dayCount) {
+        snapshot.sessions.filter { week in it.weeks && it.dayOfWeek <= dayCount }
+    }
+    val otherWeeks = remember(snapshot, week, settings.showOtherWeeks, dayCount) {
         // 只在别的周上、这一周不上的课灰显出来，便于看出单双周
-        if (settings.showOtherWeeks) snapshot.sessions.filter { week !in it.weeks } else emptyList()
+        if (settings.showOtherWeeks) {
+            snapshot.sessions.filter { week !in it.weeks && it.dayOfWeek <= dayCount }
+        } else {
+            emptyList()
+        }
     }
 
     val scrollState = rememberScrollState()
@@ -351,7 +366,7 @@ private fun WeekGrid(
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val gridWidth: Dp = maxWidth - TIME_COLUMN_WIDTH
-            val dayWidth: Dp = gridWidth / 7
+            val dayWidth: Dp = gridWidth / dayCount
             val gridHeight: Dp = ROW_HEIGHT * maxPeriod
 
             Row(modifier = Modifier.height(gridHeight)) {
@@ -370,8 +385,8 @@ private fun WeekGrid(
                         }
                     }
 
-                    // 今天所在列的高亮
-                    if (week == currentWeek) {
+                    // 今天所在列的高亮（周末被隐藏时今天落在周末就不画）
+                    if (week == currentWeek && today.dayOfWeek.value <= dayCount) {
                         Box(
                             modifier = Modifier
                                 .offset(x = dayWidth * (today.dayOfWeek.value - 1))
@@ -383,7 +398,7 @@ private fun WeekGrid(
 
                     // 竖线
                     Row(modifier = Modifier.width(gridWidth).height(gridHeight)) {
-                        repeat(7) {
+                        repeat(dayCount) {
                             Box(
                                 modifier = Modifier.width(dayWidth).fillMaxHeight(),
                                 contentAlignment = Alignment.CenterEnd,

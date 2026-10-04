@@ -70,6 +70,10 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
     private val _progress = MutableStateFlow<Map<String, AnimeProgress>>(emptyMap())
     val progress: StateFlow<Map<String, AnimeProgress>> = _progress
 
+    /** 搜索历史（最新的在前），影视页搜索框为空时展示。 */
+    val searchHistory: StateFlow<List<String>> = store.searchHistory
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** 详情页点下的那一集，等 QzktApp 跳到播放器页时交给 [com.qzkt.timetable.ui.player.PlayerScreen] 消费。 */
     var pendingPlay: AnimePlayRequest? = null
         private set
@@ -115,8 +119,13 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
     fun search(keyword: String) {
         val query = keyword.trim()
         if (query.isEmpty()) return
+        viewModelScope.launch { store.addSearchHistory(query) }
         _list.value = AnimeListState(mode = AnimeListState.Mode.SEARCH, query = query)
         loadPage(reset = true)
+    }
+
+    fun clearSearchHistory() {
+        viewModelScope.launch { store.clearSearchHistory() }
     }
 
     /** 从搜索退回分类浏览。 */

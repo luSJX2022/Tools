@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -36,6 +38,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -65,7 +68,7 @@ import com.qzkt.timetable.data.anime.AnimeItem
  * 结构参考 AniCh 的浏览 → 搜索 → 详情 → 选集流程，海报三列网格，
  * 滑到底部自动翻页。选封面进详情，选集后跳播放器页。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AnimeScreen(
     viewModel: AnimeViewModel,
@@ -74,6 +77,7 @@ fun AnimeScreen(
 ) {
     val listState by viewModel.list.collectAsStateWithLifecycle()
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
+    val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
     var queryInput by rememberSaveable { mutableStateOf("") }
 
@@ -118,6 +122,44 @@ fun AnimeScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 4.dp),
             )
+
+            // 搜索框为空、又不在搜索结果里时，露出搜索历史：点一下直接搜
+            if (queryInput.isEmpty() && listState.mode != AnimeListState.Mode.SEARCH && searchHistory.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "搜索历史",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { viewModel.clearSearchHistory() }) { Text("清空", fontSize = 12.sp) }
+                }
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    searchHistory.forEach { keyword ->
+                        SuggestionChip(
+                            onClick = {
+                                queryInput = keyword
+                                keyboard?.hide()
+                                viewModel.search(keyword)
+                            },
+                            label = {
+                                Text(keyword, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
 
             Row(
                 modifier = Modifier

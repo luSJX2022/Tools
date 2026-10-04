@@ -80,7 +80,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // 学期、作息时间表、课表同步、上课提醒、数据搬去了课表页顶栏的「课表工具」
-            AppearanceSection(settings = settings, onUpdate = onUpdate)
+            PersonalizationSection(settings = settings, onUpdate = onUpdate)
             if (videoSources.isNotEmpty()) {
                 VideoSourceCard(
                     sources = videoSources,
@@ -138,8 +138,8 @@ private fun VideoSourceCard(sources: List<MacCmsSource>, selectedKey: String, on
 }
 
 @Composable
-private fun AppearanceSection(settings: AppSettings, onUpdate: ((AppSettings) -> AppSettings) -> Unit) {
-    SectionCard("外观") {
+private fun PersonalizationSection(settings: AppSettings, onUpdate: ((AppSettings) -> AppSettings) -> Unit) {
+    SectionCard("个性化") {
         Text("主题", fontSize = 13.sp)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -161,6 +161,47 @@ private fun AppearanceSection(settings: AppSettings, onUpdate: ((AppSettings) ->
         )
 
         Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        Spacer(Modifier.height(8.dp))
+
+        // 首页入口：不用的功能可以从工具页藏起来，设置里随时打开
+        Text("首页入口", fontSize = 13.sp)
+        Spacer(Modifier.height(4.dp))
+        toolEntryToggles.forEach { (key, title, subtitle) ->
+            SwitchRow(
+                title = title,
+                subtitle = subtitle,
+                checked = key !in settings.hiddenToolKeys,
+                onCheckedChange = { show ->
+                    onUpdate {
+                        it.copy(
+                            hiddenToolKeys = if (show) {
+                                it.hiddenToolKeys - key
+                            } else {
+                                it.hiddenToolKeys + key
+                            },
+                        )
+                    }
+                },
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+        Text(
+            text = "关掉的入口在工具页不再显示，随时可以再打开",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            title = "显示周末",
+            subtitle = "关掉后课表只显示周一到周五",
+            checked = settings.showWeekend,
+            onCheckedChange = { on -> onUpdate { it.copy(showWeekend = on) } },
+        )
+        Spacer(Modifier.height(8.dp))
         SwitchRow(
             title = "显示非本周课程",
             subtitle = "把单双周不上课的课灰色显示出来",
@@ -169,6 +210,14 @@ private fun AppearanceSection(settings: AppSettings, onUpdate: ((AppSettings) ->
         )
     }
 }
+
+/** 工具页入口的开关定义：key 与 QzktApp / ToolsScreen 里用的隐藏 key 对应。 */
+private val toolEntryToggles = listOf(
+    Triple("timetable", "课表", "教务课表、调课通知和上课提醒"),
+    Triple("book", "图书", "本地 TXT 小说：书架、进度记忆、夜间模式"),
+    Triple("resolve", "链接解析", "B站 / 抖音分享链接，解析后直接播放"),
+    Triple("anime", "影视", "电影、剧集、动漫，搜索、收藏和在线播放"),
+)
 
 /** 存储管理：播放缓存、图片缓存、追番数据，各自显示占用并可以清理。 */
 @Composable

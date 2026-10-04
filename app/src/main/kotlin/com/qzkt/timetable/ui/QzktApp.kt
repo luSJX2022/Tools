@@ -232,6 +232,7 @@ fun QzktApp(
                         snapshot = snapshot,
                         animeFavoriteCount = animeFavorites.size,
                         configured = settings.configured,
+                        hiddenEntries = settings.hiddenToolKeys.toSet(),
                         onOpenTimetable = { navController.navigate(Routes.TIMETABLE) },
                         onOpenResolve = { navController.navigate(Routes.RESOLVE) },
                         onOpenBooks = { navController.navigate(Routes.BOOK) },

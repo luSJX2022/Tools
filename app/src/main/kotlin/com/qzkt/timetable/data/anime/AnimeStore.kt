@@ -23,6 +23,8 @@ private data class AnimeStoreData(
     val favorites: List<AnimeFavorite> = emptyList(),
     /** key 是「source:id」。 */
     val progress: Map<String, AnimeProgress> = emptyMap(),
+    /** 搜索历史，最新的在前，去重，最多 [MAX_SEARCH_HISTORY] 条。 */
+    val searchHistory: List<String> = emptyList(),
 )
 
 /** 追番收藏和观看进度的本地存储（不联网同步）。 */
@@ -55,6 +57,35 @@ class AnimeStore(private val context: Context) {
 
     /** key 为「source:id」的进度表。 */
     val progress: Flow<Map<String, AnimeProgress>> = data.map { it.progress }
+
+    /** 搜索历史，最新的在前。 */
+    val searchHistory: Flow<List<String>> = data.map { it.searchHistory }
+
+    /** 记一条搜索历史：去重置顶，超出上限裁掉最旧的那条。 */
+    suspend fun addSearchHistory(query: String) {
+        val keyword = query.trim()
+        if (keyword.isEmpty()) return
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(
+                    searchHistory = (listOf(keyword) + existing.searchHistory.filterNot { it == keyword })
+                        .take(MAX_SEARCH_HISTORY),
+                ),
+            )
+        }
+    }
+
+    suspend fun clearSearchHistory() {
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(searchHistory = emptyList()),
+            )
+        }
+    }
 
     suspend fun toggleFavorite(item: AnimeFavorite): Boolean {
         var added = false
@@ -100,4 +131,9 @@ class AnimeStore(private val context: Context) {
     private fun decode(raw: String?): AnimeStoreData =
         raw?.let { runCatching { json.decodeFromString(AnimeStoreData.serializer(), it) }.getOrNull() }
             ?: AnimeStoreData()
+
+    private companion object {
+        /** 搜索历史最多保留的条数。 */
+        const val MAX_SEARCH_HISTORY = 20
+    }
 }
