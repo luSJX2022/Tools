@@ -32,6 +32,8 @@ data class AppSettings(
     val showOtherWeeks: Boolean = true,
     /** 课表是否显示周六周日，关掉后只留周一到周五。 */
     val showWeekend: Boolean = true,
+    /** 番剧一集放完是否自动接着放下一集。 */
+    val autoPlayNext: Boolean = true,
     /**
      * 工具页（首页）要隐藏的入口 key：`timetable` / `book` / `resolve` / `anime`。
      *

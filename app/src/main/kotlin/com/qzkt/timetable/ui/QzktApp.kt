@@ -320,6 +320,7 @@ fun QzktApp(
                         // 播放会话放 VM 里：退出播放器再进来，选集内容还在
                         animeSession = animeSession,
                         onEpisodeSwitched = { animeViewModel.switchEpisode(it) },
+                        autoPlayNext = settings.autoPlayNext,
                     )
                 }
 

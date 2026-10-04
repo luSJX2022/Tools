@@ -208,6 +208,13 @@ private fun PersonalizationSection(settings: AppSettings, onUpdate: ((AppSetting
             checked = settings.showOtherWeeks,
             onCheckedChange = { on -> onUpdate { it.copy(showOtherWeeks = on) } },
         )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            title = "自动连播",
+            subtitle = "番剧一集放完接着放下一集",
+            checked = settings.autoPlayNext,
+            onCheckedChange = { on -> onUpdate { it.copy(autoPlayNext = on) } },
+        )
     }
 }
 

@@ -108,6 +108,8 @@ fun PlayerScreen(
     animeSession: AnimePlayRequest? = null,
     /** 播放器里选集换集后：更新会话并记进度。 */
     onEpisodeSwitched: (AnimePlayRequest) -> Unit = {},
+    /** 一集放完是否自动接着放下一集（设置 → 个性化里开关）。 */
+    autoPlayNext: Boolean = false,
 ) {
     val context = LocalContext.current
 
@@ -315,6 +317,22 @@ fun PlayerScreen(
         lastError = null
         pendingUriText = updated.url
         showEpisodes = false
+    }
+
+    // 自动连播：一集放完（STATE_ENDED）切下一集；解析直链没有剧集列表，不动作。
+    // 换集会重建会话，key 带上 currentIndex 让监听器闭包里的 animeSession 始终是新的。
+    DisposableEffect(controller, autoPlayNext, animeSession?.currentIndex) {
+        val c = controller ?: return@DisposableEffect onDispose { }
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState != Player.STATE_ENDED || !autoPlayNext) return
+                val session = animeSession ?: return
+                val next = session.currentIndex + 1
+                if (next < session.episodes.size) playEpisode(next)
+            }
+        }
+        c.addListener(listener)
+        onDispose { c.removeListener(listener) }
     }
 
     // 两个画面（小窗 / 全屏）共用同一套自定义控制条；控制条里的「清晰度 / 选集」

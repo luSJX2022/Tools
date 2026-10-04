@@ -78,6 +78,7 @@ fun AnimeScreen(
     val listState by viewModel.list.collectAsStateWithLifecycle()
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
     val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
+    val progress by viewModel.progress.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
     var queryInput by rememberSaveable { mutableStateOf("") }
 
@@ -185,6 +186,7 @@ fun AnimeScreen(
             when (listState.mode) {
                 AnimeListState.Mode.FAVORITES -> FavoritesGrid(
                     favorites = favorites,
+                    progress = progress,
                     onOpenDetail = onOpenDetail,
                 )
                 else -> BrowseGrid(
@@ -256,6 +258,7 @@ private fun BrowseGrid(
 @Composable
 private fun FavoritesGrid(
     favorites: List<com.qzkt.timetable.data.anime.AnimeFavorite>,
+    progress: Map<String, com.qzkt.timetable.data.anime.AnimeProgress>,
     onOpenDetail: (id: String) -> Unit,
 ) {
     if (favorites.isEmpty()) {
@@ -276,10 +279,14 @@ private fun FavoritesGrid(
         modifier = Modifier.fillMaxSize(),
     ) {
         items(favorites, key = { it.source + it.id }) { fav ->
+            // 有观看进度时把「看到第几集」并进角标，跟更新信息一起显示
+            val seen = progress[AnimeViewModel.progressKey(fav.source, fav.id)]
+                ?.episodeLabel?.takeIf { it.isNotBlank() }
             PosterCard(
                 name = fav.name,
                 pic = fav.pic,
-                remark = fav.remark.takeIf { it.isNotBlank() },
+                remark = listOfNotNull(fav.remark.takeIf { it.isNotBlank() }, seen?.let { "看到 $it" })
+                    .joinToString(" · ").takeIf { it.isNotBlank() },
                 onClick = { onOpenDetail(fav.id) },
             )
         }
