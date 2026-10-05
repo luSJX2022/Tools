@@ -26,16 +26,15 @@ class GradesViewModel(private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(GradesUiState())
     val state: StateFlow<GradesUiState> = _state
 
-    init {
-        refresh()
-    }
-
+    /** 用户点「查询」时才发起网络请求，不自动加载。 */
     fun refresh() {
         if (_state.value.loading) return
         viewModelScope.launch {
-            val settings = container.settingsStore.settings.first()
+            val settings = withContext(Dispatchers.IO) {
+                container.settingsStore.settings.first()
+            }
             if (settings.baseUrl.isBlank() || settings.username.isBlank()) {
-                _state.value = GradesUiState(error = "还没有配置教务系统账号，请先在课表页导入课表")
+                _state.value = GradesUiState(error = "还没有配置教务系统账号，请先在课表页配置")
                 return@launch
             }
             _state.value = GradesUiState(loading = true)

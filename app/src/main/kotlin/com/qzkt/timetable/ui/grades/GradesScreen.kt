@@ -157,7 +157,7 @@ private fun GradesContent(grades: List<GradeInfo>, studentName: String?) {
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
-            items(courses.size, key = { courses[it].courseName + it }) { index ->
+            items(courses.size, key = { semester + courses[it].courseName + it }) { index ->
                 val course = courses[index]
                 Card(
                     modifier = Modifier.fillMaxWidth(),

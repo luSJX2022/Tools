@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261005T000713480Z-9880-c3d39504af4b",
+  "runId": "20261005T000713480Z-9880-c3d39504af4b",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "1265e82adcdccbe5ba8b4cd1b4a8643742385ed9",
+  "diffHash": "cbc2b31905002fa078e664a03d7f0174d4fbd3a99cf6075286d93cd9ca09a629",
+  "rulesVersion": "unavailable",
+  "sessionHash": "e962151cbe124c0f91610502e08dde0da23fa65880da08965ba6f4f24ade52bd",
+  "reportRef": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c-20261005T000713480Z-9880-c3d39504af4b.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/ui/grades/GradesViewModel.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/ui/grades/GradesScreen.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "app/build.gradle.kts",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-05T00:07:13.869Z"
+}
