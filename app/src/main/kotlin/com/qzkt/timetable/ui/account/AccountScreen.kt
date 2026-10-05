@@ -194,7 +194,7 @@ fun AccountScreen(
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("清空课表？") },
-            text = { Text("会删掉本地课表和变动记录，账号配置保留。下次同步可以重新拉取。") },
+            text = { Text("会删掉本地课表，账号配置保留。下次同步可以重新拉取。") },
             confirmButton = {
                 TextButton(onClick = {
                     onClearTimetable()

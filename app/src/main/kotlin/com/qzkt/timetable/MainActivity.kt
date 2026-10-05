@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 通知权限：Android 13+ 才有。拒绝不影响主要功能，只是收不到变动和上课提醒
+        // 通知权限：Android 13+ 才有。拒绝不影响主要功能，只是收不到同步失败和上课提醒
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }

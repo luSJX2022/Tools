@@ -81,58 +81,106 @@ fun SettingsScreen(
         ) {
             // 学期、作息时间表、课表同步、上课提醒、数据搬去了课表页顶栏的「课表工具」
             PersonalizationSection(settings = settings, onUpdate = onUpdate)
-            if (videoSources.isNotEmpty()) {
-                VideoSourceCard(
-                    sources = videoSources,
-                    selectedKey = videoSourceKey,
-                    onSelect = onSelectVideoSource,
-                )
-            }
-            bookViewModel?.let { vm -> BookSettingsCard(viewModel = vm, animeFavoriteCount = animeFavoriteCount) }
-            StorageCard(
+            VideoCard(
+                sources = videoSources,
+                selectedKey = videoSourceKey,
+                onSelect = onSelectVideoSource,
                 animeFavoriteCount = animeFavoriteCount,
                 onClearAnimeFavorites = onClearAnimeFavorites,
             )
+            bookViewModel?.let { vm -> BookSettingsCard(viewModel = vm, animeFavoriteCount = animeFavoriteCount) }
+            CacheCard()
             AboutCard()
             Spacer(Modifier.height(24.dp))
         }
     }
 }
 
-/** 影视源：选择影视页从哪个资源站取数据，各源收录和速度不同。 */
+/** 影视：资源站切换 + 收藏数据管理，一个卡片管完这个功能。 */
 @Composable
-private fun VideoSourceCard(sources: List<MacCmsSource>, selectedKey: String, onSelect: (String) -> Unit) {
-    SectionCard("影视源") {
-        sources.forEach { source ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelect(source.key) }
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = source.key == selectedKey,
-                    onClick = { onSelect(source.key) },
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(source.name, fontSize = 14.sp)
-                    Text(
-                        text = source.baseUrl
-                            .removePrefix("https://").removePrefix("http://")
-                            .substringBefore('/') +
-                            " · " + source.categories.joinToString("／") { it.first },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun VideoCard(
+    sources: List<MacCmsSource>,
+    selectedKey: String,
+    onSelect: (String) -> Unit,
+    animeFavoriteCount: Int,
+    onClearAnimeFavorites: () -> Unit,
+) {
+    var confirmClearFavorites by remember { mutableStateOf(false) }
+
+    SectionCard("影视") {
+        if (sources.isNotEmpty()) {
+            Text("资源站", fontSize = 13.sp)
+            Spacer(Modifier.height(4.dp))
+            sources.forEach { source ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(source.key) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = source.key == selectedKey,
+                        onClick = { onSelect(source.key) },
                     )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(source.name, fontSize = 14.sp)
+                        Text(
+                            text = source.baseUrl
+                                .removePrefix("https://").removePrefix("http://")
+                                .substringBefore('/') +
+                                " · " + source.categories.joinToString("／") { it.first },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "某个源打不开或内容不全时换个试试",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+            )
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "某个源打不开或内容不全时换个试试",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("影视收藏", fontSize = 14.sp)
+                Text(
+                    text = "本地保存的收藏与观看进度，" +
+                        if (animeFavoriteCount > 0) "当前 $animeFavoriteCount 部" else "当前暂无",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (animeFavoriteCount > 0) {
+                TextButton(onClick = { confirmClearFavorites = true }) { Text("清空") }
+            }
+        }
+    }
+
+    if (confirmClearFavorites) {
+        AlertDialog(
+            onDismissRequest = { confirmClearFavorites = false },
+            title = { Text("清空收藏？") },
+            text = { Text("会删掉全部收藏和观看进度，不影响视频缓存。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onClearAnimeFavorites()
+                    confirmClearFavorites = false
+                }) { Text("清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearFavorites = false }) { Text("取消") }
+            },
         )
     }
 }
@@ -220,20 +268,19 @@ private fun PersonalizationSection(settings: AppSettings, onUpdate: ((AppSetting
 
 /** 工具页入口的开关定义：key 与 QzktApp / ToolsScreen 里用的隐藏 key 对应。 */
 private val toolEntryToggles = listOf(
-    Triple("timetable", "课表", "教务课表、调课通知和上课提醒"),
+    Triple("timetable", "课表", "教务课表导入、后台同步和上课提醒"),
     Triple("book", "图书", "本地 TXT 小说：书架、进度记忆、夜间模式"),
     Triple("resolve", "链接解析", "B站 / 抖音分享链接，解析后直接播放"),
     Triple("anime", "影视", "电影、剧集、动漫，搜索、收藏和在线播放"),
 )
 
-/** 存储管理：播放缓存、图片缓存、追番数据，各自显示占用并可以清理。 */
+/** 存储与缓存：播放缓存、图片缓存，各自显示占用并可以清理。 */
 @Composable
-private fun StorageCard(animeFavoriteCount: Int, onClearAnimeFavorites: () -> Unit) {
+private fun CacheCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var playbackSize by remember { mutableStateOf<Long?>(null) }
     var imageSize by remember { mutableStateOf<Long?>(null) }
-    var confirmClearFavorites by remember { mutableStateOf(false) }
 
     fun refreshSizes() {
         scope.launch {
@@ -250,7 +297,7 @@ private fun StorageCard(animeFavoriteCount: Int, onClearAnimeFavorites: () -> Un
     }
     LaunchedEffect(Unit) { refreshSizes() }
 
-    SectionCard("存储") {
+    SectionCard("存储与缓存") {
         StorageRow(
             title = "播放缓存",
             desc = "看过的视频分片，上限 256MB",
@@ -282,31 +329,6 @@ private fun StorageCard(animeFavoriteCount: Int, onClearAnimeFavorites: () -> Un
                     }
                     refreshSizes()
                 }
-            },
-        )
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-        StorageRow(
-            title = "影视收藏",
-            desc = "本地保存的收藏与观看进度",
-            size = if (animeFavoriteCount > 0) "$animeFavoriteCount 部" else "暂无",
-            action = if (animeFavoriteCount > 0) "清空" else "",
-            onAction = { confirmClearFavorites = true },
-        )
-    }
-
-    if (confirmClearFavorites) {
-        AlertDialog(
-            onDismissRequest = { confirmClearFavorites = false },
-            title = { Text("清空收藏？") },
-            text = { Text("会删掉全部收藏和观看进度，不影响视频缓存。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClearAnimeFavorites()
-                    confirmClearFavorites = false
-                }) { Text("清空") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmClearFavorites = false }) { Text("取消") }
             },
         )
     }

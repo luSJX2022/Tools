@@ -30,9 +30,6 @@ class SyncWorker(
         }
 
         if (report.success) {
-            if (report.changes.isNotEmpty()) {
-                container.notifier.notifyChanges(report.changes)
-            }
             container.classReminders.rescheduleUpcoming()
         } else {
             container.notifier.notifySyncFailed(report.message)

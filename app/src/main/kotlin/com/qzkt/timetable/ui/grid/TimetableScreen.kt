@@ -22,13 +22,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -93,9 +90,8 @@ internal fun computeCurrentWeek(snapshot: TimetableSnapshot, today: LocalDate): 
  * 还没配置账号时这里不显示空课表，而是一块引导：告诉用户去哪儿配置 —— 首次使用
  * 不再一上来就弹配置向导（见 [com.qzkt.timetable.ui.QzktApp]）。
  *
- * 顶部栏右上角放着两个入口：**课表变动**（有变动时带角标）和**教务账号**。
- * 学期 / 作息时间表 / 课表同步 / 上课提醒 / 数据那组工具并进了教务账号页（账号信息下面），
- * 顶栏少一个图标。挪过来都是为了看课表时顺手就能点到。
+ * 顶部栏右上角是「教务账号」入口：学期 / 作息时间表 / 课表同步 / 上课提醒 /
+ * 数据那组工具并进了教务账号页（账号信息下面），看课表时顺手就能点到。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,9 +103,6 @@ fun TimetableScreen(
     onWeekChange: (Int) -> Unit,
     onRefresh: () -> Unit,
     onSetFirstMonday: (String) -> Unit,
-    /** 变动条数：大于 0 时在顶部栏「变动」图标上显示角标。 */
-    changeCount: Int = 0,
-    onOpenChanges: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
 ) {
     val weekCount = snapshot.weekCount.coerceAtLeast(1)
@@ -148,18 +141,6 @@ fun TimetableScreen(
                     }
                     IconButton(onClick = { onWeekChange(currentWeek) }) {
                         Icon(Icons.Default.Today, contentDescription = "回到本周")
-                    }
-                    // 变动和账号放在最右：这两个入口是这次从底部页签 / 设置页挪过来的
-                    IconButton(onClick = onOpenChanges) {
-                        BadgedBox(
-                            badge = {
-                                if (changeCount > 0) {
-                                    Badge { Text(if (changeCount > 99) "99+" else changeCount.toString()) }
-                                }
-                            },
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "课表变动")
-                        }
                     }
                     IconButton(onClick = onOpenAccount) {
                         Icon(Icons.Default.AccountCircle, contentDescription = "教务账号")

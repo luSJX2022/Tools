@@ -1,7 +1,6 @@
 package com.qzkt.timetable.data
 
 import com.qzkt.timetable.jw.RawExchange
-import com.qzkt.timetable.model.SyncChange
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -21,32 +20,18 @@ class TimetableStore(private val dir: File) {
     }
 
     private val snapshotFile = File(dir, "timetable.json")
-    private val changeLogFile = File(dir, "changes.json")
     private val diagnosticsFile = File(dir, "diagnostics.json")
     private val rawPageFile = File(dir, "last-page.html")
 
-    private val changeListSerializer = ListSerializer(SyncChange.serializer())
     private val exchangeListSerializer = ListSerializer(RawExchange.serializer())
 
     private companion object {
-        const val MAX_CHANGES = 300
         const val MAX_EXCHANGES = 40
     }
 
     fun loadSnapshot(): TimetableSnapshot = read(snapshotFile, TimetableSnapshot.serializer()) ?: TimetableSnapshot()
 
     fun saveSnapshot(snapshot: TimetableSnapshot) = write(snapshotFile, TimetableSnapshot.serializer(), snapshot)
-
-    /** 变更日志，最新在前。 */
-    fun loadChanges(): List<SyncChange> = read(changeLogFile, changeListSerializer) ?: emptyList()
-
-    fun appendChanges(changes: List<SyncChange>) {
-        if (changes.isEmpty()) return
-        val merged = (changes.reversed() + loadChanges()).take(MAX_CHANGES)
-        write(changeLogFile, changeListSerializer, merged)
-    }
-
-    fun clearChanges() = write(changeLogFile, changeListSerializer, emptyList())
 
     /** 最近的接口往返记录，最新在前。 */
     fun loadDiagnostics(): List<RawExchange> = read(diagnosticsFile, exchangeListSerializer) ?: emptyList()

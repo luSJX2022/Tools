@@ -39,7 +39,6 @@ import com.qzkt.timetable.ui.anime.AnimeScreen
 import com.qzkt.timetable.ui.anime.AnimeViewModel
 import com.qzkt.timetable.ui.debug.DebugScreen
 import com.qzkt.timetable.ui.grid.TimetableScreen
-import com.qzkt.timetable.ui.log.ChangesScreen
 import com.qzkt.timetable.ui.player.PlayerScreen
 import com.qzkt.timetable.ui.player.ResolveScreen
 import com.qzkt.timetable.ui.settings.SettingsScreen
@@ -72,7 +71,6 @@ private object Routes {
     const val GRADES = "grades"
     /** 参数是资源站里的番剧 id。 */
     const val ANIME_DETAIL = "anime_detail/{vodId}"
-    const val CHANGES = "changes"
     const val SETTINGS = "settings"
     const val DEBUG = "debug"
     const val SETUP = "setup"
@@ -89,7 +87,6 @@ private val TOOLS_SUB_PAGES = setOf(
     Routes.BOOK,
     Routes.BOOK_READ,
     Routes.GRADES,
-    Routes.CHANGES,
     Routes.ACCOUNT,
 )
 
@@ -110,7 +107,6 @@ fun QzktApp(
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
-    val changes by viewModel.changes.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val displayWeek by viewModel.displayWeek.collectAsStateWithLifecycle()
     val webImportResult by viewModel.webImportResult.collectAsStateWithLifecycle()
@@ -308,8 +304,6 @@ fun QzktApp(
                         onWeekChange = viewModel::showWeek,
                         onRefresh = viewModel::refresh,
                         onSetFirstMonday = viewModel::setFirstMonday,
-                        changeCount = changes.size,
-                        onOpenChanges = { navController.navigate(Routes.CHANGES) },
                         onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
                     )
                 }
@@ -337,14 +331,6 @@ fun QzktApp(
                         animeSession = animeSession,
                         onEpisodeSwitched = { animeViewModel.switchEpisode(it) },
                         autoPlayNext = settings.autoPlayNext,
-                    )
-                }
-
-                composable(Routes.CHANGES) {
-                    ChangesScreen(
-                        changes = changes,
-                        onClear = viewModel::clearChanges,
-                        onBack = { navController.popBackStack() },
                     )
                 }
 

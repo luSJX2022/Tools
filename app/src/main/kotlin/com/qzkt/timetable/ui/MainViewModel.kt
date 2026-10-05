@@ -9,7 +9,6 @@ import com.qzkt.timetable.data.TimetableSnapshot
 import com.qzkt.timetable.jw.deriveFirstMonday
 import com.qzkt.timetable.jw.qz.QzJsxsdDirect
 import com.qzkt.timetable.jw.qz.QzWebParser
-import com.qzkt.timetable.model.SyncChange
 import com.qzkt.timetable.sync.SyncScheduler
 import com.qzkt.timetable.widget.TimetableWidgetUpdater
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +43,6 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
     private val repository = container.repository
 
     val snapshot: StateFlow<TimetableSnapshot> = repository.snapshot
-    val changes: StateFlow<List<SyncChange>> = repository.changes
 
     /**
      * 配置的内存镜像。
@@ -183,10 +181,6 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         _uiState.value = _uiState.value.copy(message = "开学日期已设为 $isoDate", messageIsError = false)
     }
 
-    fun clearChanges() = viewModelScope.launch {
-        repository.clearChanges()
-    }
-
     // ---------------------------------------------------------------- 同步
 
     fun testConnection() = viewModelScope.launch {
@@ -238,9 +232,6 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         }
 
         afterSync(report.success, report.message)
-        if (report.success && report.changes.isNotEmpty()) {
-            container.notifier.notifyChanges(report.changes)
-        }
 
         // 会话过期时把失效的 cookie 清掉：不清的话顶部横幅不会出现，
         // 用户只看到一个一闪而过的提示，不知道该去哪重新登录

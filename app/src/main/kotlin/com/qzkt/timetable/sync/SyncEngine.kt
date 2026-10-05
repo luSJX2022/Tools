@@ -9,7 +9,6 @@ import com.qzkt.timetable.jw.JwSession
 import com.qzkt.timetable.jw.JwTermInfo
 import com.qzkt.timetable.jw.deriveFirstMonday
 import com.qzkt.timetable.jw.qz.QzJsxsdDirect
-import com.qzkt.timetable.model.SyncChange
 import com.qzkt.timetable.model.SyncReport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -75,7 +74,7 @@ class SyncEngine(
                 for (week in 1..weekCount) {
                     onProgress(week - 1, weekCount)
                     runCatching { session.loadWeek(week) }
-                        .onSuccess { repository.applyWeek(week, it, detectChanges = false) }
+                        .onSuccess { repository.applyWeek(week, it) }
                         .onFailure { e -> failures += "第 $week 周：${e.message}" }
                 }
                 onProgress(weekCount, weekCount)
@@ -129,13 +128,9 @@ class SyncEngine(
 
             val wholeTerm = runCatching { session.loadWholeTerm() }.getOrNull()
             if (wholeTerm != null) {
-                val changes = repository.replaceAll(wholeTerm, weekCount = weekCount)
+                repository.replaceAll(wholeTerm, weekCount = weekCount)
                 repository.recordDiagnostics(session.rawLog)
-                return@withContext if (changes.isEmpty()) {
-                    SyncReport(true, "已是最新", wholeTerm.size)
-                } else {
-                    SyncReport(true, "课表有 ${changes.size} 处更新", wholeTerm.size, changes)
-                }
+                return@withContext SyncReport(true, "课表已更新", wholeTerm.size)
             }
 
             val current = term.currentWeek ?: repository.currentWeek(LocalDate.now())
@@ -143,22 +138,19 @@ class SyncEngine(
                 .filter { it in 1..weekCount }
                 .distinct()
 
-            val changes = mutableListOf<SyncChange>()
             val failures = mutableListOf<String>()
             targets.forEach { week ->
                 runCatching { session.loadWeek(week) }
-                    .onSuccess { changes += repository.applyWeek(week, it, detectChanges = true) }
+                    .onSuccess { repository.applyWeek(week, it) }
                     .onFailure { e -> failures += "第 $week 周：${e.message}" }
             }
 
             repository.recordDiagnostics(session.rawLog)
 
-            if (changes.isEmpty() && failures.isEmpty()) {
+            if (failures.isEmpty()) {
                 SyncReport(true, "已是最新（第 $current 周）", total)
-            } else if (changes.isEmpty()) {
-                SyncReport(false, failures.first(), total)
             } else {
-                SyncReport(true, "课表有 ${changes.size} 处更新", total, changes)
+                SyncReport(false, failures.first(), total)
             }
         } catch (e: CancellationException) {
             throw e
@@ -246,7 +238,7 @@ class SyncEngine(
                 }
             }
 
-            val changes = repository.replaceAll(
+            repository.replaceAll(
                 outcome.sessions,
                 weekCount = outcome.weekCount?.takeIf { it > 0 } ?: weekCount,
             )
@@ -264,11 +256,7 @@ class SyncEngine(
                 ),
             )
 
-            if (changes.isEmpty()) {
-                SyncReport(true, "已是最新", outcome.sessions.size)
-            } else {
-                SyncReport(true, "课表有 ${changes.size} 处更新", outcome.sessions.size, changes)
-            }
+            SyncReport(true, "课表已更新", outcome.sessions.size)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
