@@ -53,6 +53,33 @@ class VideoDownloadStore(private val context: Context) {
     fun prepare(fileName: String): Target =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) viaMediaStore(fileName) else inAppDir(fileName)
 
+    /** 音频（BGM 之类）：Android 10+ 走音乐库 `Music/qzkt/`，旧版本落应用外部音乐目录。 */
+    fun prepareAudio(fileName: String): Target =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) viaMediaStoreAudio(fileName) else inAppDir(fileName, Environment.DIRECTORY_MUSIC)
+
+    private fun viaMediaStoreAudio(fileName: String): Target {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Audio.Media.MIME_TYPE, mimeTypeOf(fileName))
+            put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/" + FOLDER)
+            put(MediaStore.Audio.Media.IS_PENDING, 1)
+        }
+        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val uri = resolver.insert(collection, values) ?: throw IOException("系统没有让应用写音乐库")
+        val sink = resolver.openOutputStream(uri) ?: throw IOException("打不开音乐库里的新文件")
+        return Target(
+            uri = uri,
+            location = Environment.DIRECTORY_MUSIC + "/" + FOLDER + "/" + fileName,
+            sink = sink,
+            commit = {
+                val done = ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }
+                resolver.update(uri, done, null, null)
+            },
+            rollback = { runCatching { resolver.delete(uri, null, null) } },
+        )
+    }
+
     private fun viaMediaStore(fileName: String): Target {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
@@ -77,8 +104,8 @@ class VideoDownloadStore(private val context: Context) {
         )
     }
 
-    private fun inAppDir(fileName: String): Target {
-        val dir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir
+    private fun inAppDir(fileName: String, directory: String = Environment.DIRECTORY_MOVIES): Target {
+        val dir = context.getExternalFilesDir(directory) ?: context.filesDir
         if (!dir.exists()) dir.mkdirs()
         val file = File(dir, fileName)
         return Target(

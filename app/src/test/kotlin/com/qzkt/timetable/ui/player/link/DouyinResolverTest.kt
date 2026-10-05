@@ -161,6 +161,27 @@ class DouyinResolverTest {
         assertNull(media.musicUrl)
     }
 
+    @Test
+    fun `音乐页链接直接按音乐解析`() = runBlocking {
+        val media = resolver().resolve(MediaLink.Douyin(url = "$base/music/m123", musicId = "m123"))
+
+        assertEquals("https://cdn.example.com/music/bgm.mp3", media.url)
+        assertEquals("原声 · 千与千寻", media.title)
+        assertEquals(MediaPlatform.DOUYIN, media.platform)
+        // 不抓作品分享页，只问 music/detail
+        assertTrue(seenPaths.any { it.startsWith("/aweme/v1/music/detail/") })
+        assertTrue(seenPaths.none { it.startsWith("/share/") })
+    }
+
+    @Test
+    fun `音乐详情拿不到地址时报人话`() = runBlocking {
+        musicDetailBroken = true
+        val error = runCatching {
+            resolver().resolve(MediaLink.Douyin(url = "$base/music/m123", musicId = "m123"))
+        }.exceptionOrNull() as LinkResolveException
+        assertTrue(error.message!!.contains("抖音没有返回这首音乐的播放地址"))
+    }
+
     /** 结构变过好几版：只要树里有带播放地址的 item，就得认得出来。 */
     @Test
     fun `结构换了位置也能找到播放地址`() {

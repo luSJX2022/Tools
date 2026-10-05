@@ -87,6 +87,21 @@ class MediaLinkTest {
     }
 
     @Test
+    fun `抖音音乐链接`() {
+        val web = detectShareLink("https://www.douyin.com/music/7596294695140919334") as MediaLink.Douyin
+        assertEquals("7596294695140919334", web.musicId)
+        assertNull(web.awemeId)
+
+        val share = detectShareLink("https://www.iesdouyin.com/share/music/7596294695140919334/") as MediaLink.Douyin
+        assertEquals("7596294695140919334", share.musicId)
+        assertNull(share.awemeId)
+
+        // 视频地址不能被误认成音乐
+        val video = detectShareLink("https://www.douyin.com/video/7123456789012345678") as MediaLink.Douyin
+        assertNull(video.musicId)
+    }
+
+    @Test
     fun `普通流地址不当作分享链接`() {
         assertNull(detectShareLink("https://example.com/live/index.m3u8"))
         assertNull(detectShareLink("http://192.168.1.10:8080/movie.mp4"))

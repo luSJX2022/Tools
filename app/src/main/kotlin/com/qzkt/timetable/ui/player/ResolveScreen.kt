@@ -69,6 +69,7 @@ import com.qzkt.timetable.ui.common.SectionCard
 import com.qzkt.timetable.ui.player.link.MediaDownloader
 import com.qzkt.timetable.ui.player.link.MediaLinkResolver
 import com.qzkt.timetable.ui.player.link.ResolvedMedia
+import com.qzkt.timetable.ui.player.link.ResolveHistoryStore
 import com.qzkt.timetable.ui.player.link.detectShareLink
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -111,7 +112,11 @@ fun ResolveScreen(
     onPlay: (AnimePlayRequest) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val linkResolver = remember { MediaLinkResolver() }
+    val historyStore = remember { ResolveHistoryStore(context) }
+    // 最近解析：输入为空时列出来，点一下直接重新解析
+    var history by remember { mutableStateOf(historyStore.entries()) }
     val keyboard = LocalSoftwareKeyboardController.current
 
     var urlInput by rememberSaveable { mutableStateOf("") }
@@ -156,6 +161,9 @@ fun ResolveScreen(
                 StreamHeaders.set(media.headers)
                 urlInput = ""
                 resolved = media
+                // 记进解析历史：标题拿不到的用地址顶一下
+                historyStore.add(link.platform.label, media.title ?: raw.take(40), raw)
+                history = historyStore.entries()
             } catch (e: CancellationException) {
                 throw e   // 页面被销毁时的正常取消，不算解析失败
             } catch (e: Exception) {
@@ -242,8 +250,8 @@ fun ResolveScreen(
             }
 
             Text(
-                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行），图集会列出每张图的直链，" +
-                    "图文 / 视频带的 BGM 也能直接播；普通流地址（.m3u8 / 直链）不走解析直接给直链。",
+                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行）和抖音音乐链接，图集会列出每张图，" +
+                    "图文 / 视频带的 BGM 能播能下；普通流地址（.m3u8 / 直链）不走解析直接给直链。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -254,6 +262,46 @@ fun ResolveScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+
+            // 输入为空时露出最近解析：点一下直接把当时的原文填回去解析
+            if (urlInput.isBlank() && history.isNotEmpty()) {
+                SectionCard("最近解析") {
+                    history.take(8).forEach { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    urlInput = entry.input
+                                    resolve()
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.title ?: entry.input,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = entry.platform +
+                                        " · " + formatDate(entry.at / 1000),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            historyStore.clear()
+                            history = emptyList()
+                        },
+                        modifier = Modifier.align(Alignment.End),
+                    ) { Text("清空历史") }
+                }
             }
 
             resolved?.let { media ->
@@ -290,6 +338,8 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: (AnimePlayRequest) -> Uni
             copiedMusic = false
         }
     }
+    // 背景音乐下载状态：null = 空闲，"下载中" / 完成或失败的结果文本
+    var musicDownloadStatus by remember { mutableStateOf<String?>(null) }
 
     SectionCard("解析结果") {
         Row {
@@ -573,6 +623,45 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: (AnimePlayRequest) -> Uni
                     clipboard.setText(AnnotatedString(musicUrl))
                     copiedMusic = true
                 }) { Text(if (copiedMusic) "已复制" else "复制") }
+                // 下载存到音乐库 Music/qzkt/；抖音的地址常常没有后缀，按 m4a 存
+                val musicDownloading = musicDownloadStatus == "下载中"
+                TextButton(
+                    onClick = {
+                        if (musicDownloading) return@TextButton
+                        scope.launch {
+                            musicDownloadStatus = "下载中"
+                            musicDownloadStatus = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val ext = musicUrl.substringAfterLast('.', "")
+                                        .lowercase().takeIf { it in listOf("mp3", "m4a", "aac") } ?: "m4a"
+                                    val base = (media.musicTitle ?: media.title ?: "抖音BGM")
+                                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                        .take(40)
+                                    val target = VideoDownloadStore(context).prepareAudio("$base.$ext")
+                                    try {
+                                        MediaDownloader().download(musicUrl, emptyMap(), target.open()) { _, _ -> }
+                                        target.finish()
+                                        "已保存到 " + target.location
+                                    } catch (e: CancellationException) {
+                                        target.abort()
+                                        throw e
+                                    } catch (e: Exception) {
+                                        target.abort()
+                                        "下载失败"
+                                    }
+                                }.getOrElse { if (it is CancellationException) throw it else "下载失败" }
+                            }
+                        }
+                    },
+                    enabled = !musicDownloading,
+                ) { Text(if (musicDownloading) "下载中…" else "下载") }
+            }
+            musicDownloadStatus?.takeIf { it != "下载中" }?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             // 图文作品没有视频，BGM 是它唯一能直接播的；视频作品也能单独听 BGM
             Button(

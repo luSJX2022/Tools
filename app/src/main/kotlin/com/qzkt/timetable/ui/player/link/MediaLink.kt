@@ -48,6 +48,8 @@ sealed interface MediaLink {
     data class Douyin(
         override val url: String,
         val awemeId: String? = null,
+        /** 音乐页链接（douyin.com/music/{id}）的作品号：直接按音乐解析，不抓分享页。 */
+        val musicId: String? = null,
     ) : MediaLink {
         override val platform: MediaPlatform get() = MediaPlatform.DOUYIN
     }
@@ -84,6 +86,9 @@ private val AWEME_ID_PATTERNS = listOf(
     Regex("""/(?:share/)?note/(\d{5,})"""),
     Regex("""/(?:share/)?slides/(\d{5,})"""),
 )
+
+/** 音乐页：`/music/{id}`（douyin.com 和 iesdouyin.com/share/music/ 都是这个形状）。 */
+private val MUSIC_ID_PATTERN = Regex("""/(?:share/)?music/(\d{5,})""")
 
 /**
  * 从一段文本（分享文案或直接粘贴的地址）里抠出第一条地址。
@@ -144,7 +149,11 @@ internal fun parseDouyinUrl(url: String): MediaLink.Douyin {
     val fromPath = AWEME_ID_PATTERNS.firstNotNullOfOrNull { it.find(path)?.groupValues?.get(1) }
     val fromQuery = listOf("modal_id", "vid", "item_ids", "aweme_id")
         .firstNotNullOfOrNull { name -> queryParam(query, name)?.takeIf { it.all(Char::isDigit) && it.length >= 5 } }
-    return MediaLink.Douyin(url = url, awemeId = fromPath ?: fromQuery)
+    return MediaLink.Douyin(
+        url = url,
+        awemeId = fromPath ?: fromQuery,
+        musicId = MUSIC_ID_PATTERN.find(path)?.groupValues?.get(1),
+    )
 }
 
 /** 主页/直播之类的地址可能是这一串数字，直接从 HTML 里捞。 */

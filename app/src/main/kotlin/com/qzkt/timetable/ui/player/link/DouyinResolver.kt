@@ -47,17 +47,27 @@ class DouyinResolver(
         ensureTtwid(userHeaders)
 
         var awemeId = link.awemeId
+        var musicId = link.musicId
         // 作品类型：普通视频 / 图集（note）/ 幻灯片（slides）—— 三者的分享页路径不一样
         var kind = kindOf(link.url)
         var firstPage: String? = null
         if (awemeId == null) {
             val jumped = client.fetch(link.url, shareHeaders(userHeaders, MOBILE_UA))
             firstPage = jumped.body.takeIf { it.isNotBlank() }
-            awemeId = parseDouyinUrl(jumped.finalUrl).awemeId
-                ?: firstPage?.let { awemeIdInHtml(it) }
-                ?: throw LinkResolveException("这条抖音链接里没有作品号（HTTP " + jumped.code + "）")
+            val parsed = parseDouyinUrl(jumped.finalUrl)
+            awemeId = parsed.awemeId
+            musicId = musicId ?: parsed.musicId
+            if (awemeId == null && musicId == null) {
+                awemeId = firstPage?.let { awemeIdInHtml(it) }
+                    ?: throw LinkResolveException("这条抖音链接里没有作品号（HTTP " + jumped.code + "）")
+            }
             // 短链跳转后的真身路径带着类型（…/share/note/{id}/），覆盖短链上认不出来的
             kindOf(jumped.finalUrl).takeIf { it != KIND_VIDEO }?.let { kind = it }
+        }
+
+        // 音乐页链接：不抓分享页（音乐分享页没有作品数据），直接按音乐解析
+        if (awemeId == null && musicId != null) {
+            return resolveMusic(musicId, userHeaders)
         }
 
         // 图集（note）的分享页在 /share/note/{id}/，用 /share/video/{id}/ 去要会拿错页面
@@ -137,16 +147,33 @@ class DouyinResolver(
     private fun fillMusic(item: DouyinItem, userHeaders: Map<String, String>): DouyinItem {
         if (item.musicUrl != null || item.musicId == null) return item
         val body = runCatching {
-            client.fetch(
-                "$musicApiBase/aweme/v1/music/detail/?music_id=${item.musicId}" +
-                    "&aid=1128&version_name=23.5.0&device_platform=android&os_version=2333",
-                shareHeaders(userHeaders, MOBILE_UA),
-            ).body
+            client.fetch(musicDetailUrl(item.musicId), shareHeaders(userHeaders, MOBILE_UA)).body
         }.getOrNull() ?: return item
-        val (url, title) = parseMusicDetail(body) ?: return item
-        Log.i(TAG, "抖音 BGM 走 music/detail 补齐：" + (title ?: item.musicId))
-        return item.copy(musicUrl = url, musicTitle = item.musicTitle ?: title)
+        val music = parseMusicDetail(body) ?: return item
+        Log.i(TAG, "抖音 BGM 走 music/detail 补齐：" + (music.title ?: item.musicId))
+        return item.copy(musicUrl = music.url, musicTitle = item.musicTitle ?: music.title)
     }
+
+    /** 音乐页链接的解析：直接按音乐返回（封面 / 歌名 / 播放地址都在 music/detail 里）。 */
+    private fun resolveMusic(musicId: String, userHeaders: Map<String, String>): ResolvedMedia {
+        val body = runCatching {
+            client.fetch(musicDetailUrl(musicId), shareHeaders(userHeaders, MOBILE_UA)).body
+        }.getOrNull().orEmpty()
+        val music = parseMusicDetail(body)
+            ?: throw LinkResolveException("抖音没有返回这首音乐的播放地址（音乐可能已下架或需要登录）")
+        return ResolvedMedia(
+            url = music.url,
+            title = music.title,
+            headers = playHeaders(userHeaders, MOBILE_UA),
+            platform = MediaPlatform.DOUYIN,
+            cover = music.cover,
+            description = music.title,
+        )
+    }
+
+    private fun musicDetailUrl(musicId: String): String =
+        "$musicApiBase/aweme/v1/music/detail/?music_id=$musicId" +
+            "&aid=1128&version_name=23.5.0&device_platform=android&os_version=2333"
 
     private fun DouyinItem.asResolved(page: String, headers: Map<String, String>): ResolvedMedia =
         ResolvedMedia(
@@ -354,13 +381,24 @@ internal fun parseItemInfo(json: String): DouyinItem? {
     return itemOf(first)
 }
 
-/** `music/detail` 的返回：play_url 和 video.play_addr 同形状，抽出第一条可用地址。 */
-internal fun parseMusicDetail(json: String): Pair<String, String?>? {
+/** `music/detail` 里抠出的一首音乐：播放地址 + 歌名 + 封面。 */
+internal data class DouyinMusic(
+    val url: String,
+    val title: String?,
+    val cover: String?,
+)
+
+/** `music/detail` 的返回：play_url / cover_medium 和 video.play_addr 同形状。 */
+internal fun parseMusicDetail(json: String): DouyinMusic? {
     val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
     if (root.optInt("status_code", -1) != 0) return null
     val info = root.optJSONObject("music_info") ?: return null
     val url = firstUrl(info.optJSONObject("play_url")) ?: return null
-    return url to info.optString("title").ifBlank { null }
+    return DouyinMusic(
+        url = url,
+        title = info.optString("title").ifBlank { null },
+        cover = firstUrl(info.optJSONObject("cover_medium")) ?: firstUrl(info.optJSONObject("cover_large")),
+    )
 }
 
 internal fun itemOfInfo(info: JSONObject): DouyinItem? {
