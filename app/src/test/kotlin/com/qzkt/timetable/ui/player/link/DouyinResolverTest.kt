@@ -44,8 +44,9 @@ class DouyinResolverTest {
     private fun resolver() = DouyinResolver(
         webBase = base,
         apiBase = base,
-        // 单测里把换 ttwid 的接口也指到假服务器，别去打真实网络
+        // 单测里把换 ttwid 和补 BGM 的接口都指到假服务器，别去打真实网络
         ttwidUrl = "$base/ttwid/union/register/",
+        musicApiBase = base,
     )
 
     @Test
@@ -138,6 +139,28 @@ class DouyinResolverTest {
         assertEquals("原创", item?.musicTitle)
     }
 
+    @Test
+    fun `分享页 SSR 直接带 play_url 时直接采用`() {
+        // 有的页面布局里音乐地址就在 SSR 数据里，这种情况不用再去补
+        val html = "<script>window._ROUTER_DATA = " +
+            "{\"loaderData\":{\"video_(id)/page\":{\"videoInfoRes\":{\"item_list\":[{" +
+            "\"desc\":\"带音乐的作品\"," +
+            "\"music\":{\"mid\":\"m9\",\"title\":\" inline \"," +
+            "\"play_url\":{\"url_list\":[\"https://cdn.example.com/inline.mp3\"]}}," +
+            "\"video\":{\"play_addr\":{\"url_list\":[\"https://cdn.example.com/aweme/v1/playwm/?video_id=n7\"]}}}]}}}};</script>"
+        val item = parseRouterData(html)
+        assertEquals("https://cdn.example.com/inline.mp3", item?.musicUrl)
+    }
+
+    @Test
+    fun `music_detail 接口挂了不影响正文解析`() = runBlocking {
+        musicDetailBroken = true
+        val media = resolver().resolve(MediaLink.Douyin(url = "$base/s/xyz"))
+        // 视频地址照常拿到，BGM 只是没有
+        assertEquals("https://cdn.example.com/aweme/v1/play/?video_id=v123&ratio=720p", media.url)
+        assertNull(media.musicUrl)
+    }
+
     /** 结构变过好几版：只要树里有带播放地址的 item，就得认得出来。 */
     @Test
     fun `结构换了位置也能找到播放地址`() {
@@ -185,6 +208,8 @@ class DouyinResolverTest {
             exchange.requestURI.path.startsWith("/share/video/") -> html(exchange, sharePage())
             exchange.requestURI.path.startsWith("/web/api/v2/aweme/iteminfo") ->
                 json(exchange, if (emptyItemInfo) """{"item_list":[]}""" else itemInfoBody())
+            exchange.requestURI.path.startsWith("/aweme/v1/music/detail/") ->
+                json(exchange, musicDetailBody())
             else -> json(exchange, """{"status_code":-1}""")
         }
     }
@@ -196,14 +221,13 @@ class DouyinResolverTest {
                 "{\"url_list\":[\"https://cdn.example.com/p1.jpg\"]}," +
                 "{\"url_list\":[\"https://cdn.example.com/p2.jpg\"]}]," +
                 "\"video\":{\"play_addr\":{\"uri\":\"https://v.example.com/slides.mp4\",\"url_list\":[]}}," +
-                "\"music\":{\"title\":\"原声 · 千与千寻\"," +
-                "\"play_url\":{\"url_list\":[\"https://cdn.example.com/music/bgm.mp3\"]}}}"
+                // 真实分享页 SSR 的音乐只有 mid/歌名，没有 play_url —— 地址要走 music/detail 补
+                "\"music\":{\"mid\":\"m123\",\"title\":\"原声 · 千与千寻\"}}"
         } else {
             "{\"desc\":\"测试抖音作品\"," +
                 "\"video\":{\"play_addr\":{\"uri\":\"v123\",\"url_list\":[" +
                 "\"https://cdn.example.com/aweme/v1/playwm/?video_id=v123&ratio=720p\"]}}," +
-                "\"music\":{\"title\":\"原声 · 千与千寻\"," +
-                "\"play_url\":{\"url_list\":[\"https://cdn.example.com/music/bgm.mp3\"]}}}"
+                "\"music\":{\"mid\":\"m123\",\"title\":\"原声 · 千与千寻\"}}"
         }
         return "<html><head><title>抖音分享</title></head><body><script>window._ROUTER_DATA = " +
             "{\"loaderData\":{\"video_(id)/page\":{\"videoInfoRes\":{\"item_list\":[$item]}}},\"errors\":{}};</script></body></html>"
@@ -211,6 +235,15 @@ class DouyinResolverTest {
 
     private fun itemInfoBody(): String =
         """{"item_list":[{"desc":"兜底作品","video":{"play_addr":{"url_list":["http://cdn.example.com/x/playwm/?v=1"]}}}]}"""
+
+    private var musicDetailBroken = false
+
+    private fun musicDetailBody(): String = if (musicDetailBroken) {
+        """{"status_code":1,"msg":"no"}"""
+    } else {
+        """{"status_code":0,"music_info":{"title":"原声 · 千与千寻","mid":"m123",""" +
+            """"play_url":{"url_list":["https://cdn.example.com/music/bgm.mp3"]}}}"""
+    }
 
     private fun redirect(exchange: HttpExchange, location: String) {
         exchange.responseHeaders.add("Location", location)

@@ -27,6 +27,11 @@ class DouyinResolver(
     private val apiBase: String = "https://www.iesdouyin.com",
     /** 换 ttwid 的接口；单测里指到假服务器，免得测试去打真实网络。 */
     private val ttwidUrl: String = DEFAULT_TTWID_URL,
+    /**
+     * 补音乐播放地址的 app 接口（按 music_id 查）；分享页 SSR 不给 play_url，
+     * 单测里指到假服务器。
+     */
+    private val musicApiBase: String = "https://aweme.snssdk.com",
 ) {
 
     /** ttwid 只取一次。 */
@@ -67,7 +72,7 @@ class DouyinResolver(
             val html = (if (index == 0) firstPage else null)
                 ?: client.fetch(shareUrl, shareHeaders(userHeaders, ua)).body
             lastHtml = html
-            val item = parseRouterData(html)
+            val item = parseRouterData(html)?.let { fillMusic(it, userHeaders) }
             if (item?.images?.isNotEmpty() == true) {
                 Log.i(TAG, "抖音分享页命中 UA#" + (index + 1) + "（图集 " + item.images.size + " 张）")
                 return item.asResolved(html, playHeaders(userHeaders, ua))
@@ -89,7 +94,7 @@ class DouyinResolver(
         // 老接口兜底（分享页改版时偶尔还能用）
         val fallback = parseItemInfo(
             client.fetch("$apiBase/web/api/v2/aweme/iteminfo/?item_ids=$awemeId", shareHeaders(userHeaders, MOBILE_UA)).body,
-        )
+        )?.let { fillMusic(it, userHeaders) }
         if (fallback != null && (fallback.images.isNotEmpty() || fallback.playUrl != null)) {
             return fallback.asResolved(lastHtml.orEmpty(), playHeaders(userHeaders, MOBILE_UA))
         }
@@ -121,6 +126,27 @@ class DouyinResolver(
         userHeaders + mapOf("User-Agent" to ua) +
             ((client.cookieJar as? LinkCookieJar)?.header()?.takeIf { it.isNotBlank() }
                 ?.let { mapOf("Cookie" to it) } ?: emptyMap())
+
+    /**
+     * 补背景音乐播放地址。
+     *
+     * 实测分享页 SSR 的 `music` 只有元数据（mid / 歌名 / 封面），**没有 play_url** ——
+     * 直接读永远拿不到 BGM。用 mid 走 app 的 music/detail 接口把 play_url 换回来；
+     * 接口挂了或音乐没地址（纯原创声被下架等）就保持 null，界面不出现 BGM 区块。
+     */
+    private fun fillMusic(item: DouyinItem, userHeaders: Map<String, String>): DouyinItem {
+        if (item.musicUrl != null || item.musicId == null) return item
+        val body = runCatching {
+            client.fetch(
+                "$musicApiBase/aweme/v1/music/detail/?music_id=${item.musicId}" +
+                    "&aid=1128&version_name=23.5.0&device_platform=android&os_version=2333",
+                shareHeaders(userHeaders, MOBILE_UA),
+            ).body
+        }.getOrNull() ?: return item
+        val (url, title) = parseMusicDetail(body) ?: return item
+        Log.i(TAG, "抖音 BGM 走 music/detail 补齐：" + (title ?: item.musicId))
+        return item.copy(musicUrl = url, musicTitle = item.musicTitle ?: title)
+    }
 
     private fun DouyinItem.asResolved(page: String, headers: Map<String, String>): ResolvedMedia =
         ResolvedMedia(
@@ -213,6 +239,11 @@ internal data class DouyinItem(
     /** 作品带的背景音乐（图文作品的 BGM 就在这里面）。 */
     val musicUrl: String? = null,
     val musicTitle: String? = null,
+    /**
+     * 音乐 id（分享页 SSR 只给元数据不给播放地址，靠它去 [DouyinResolver] 的
+     * music/detail 接口补 play_url）。
+     */
+    val musicId: String? = null,
 )
 
 /**
@@ -323,6 +354,15 @@ internal fun parseItemInfo(json: String): DouyinItem? {
     return itemOf(first)
 }
 
+/** `music/detail` 的返回：play_url 和 video.play_addr 同形状，抽出第一条可用地址。 */
+internal fun parseMusicDetail(json: String): Pair<String, String?>? {
+    val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
+    if (root.optInt("status_code", -1) != 0) return null
+    val info = root.optJSONObject("music_info") ?: return null
+    val url = firstUrl(info.optJSONObject("play_url")) ?: return null
+    return url to info.optString("title").ifBlank { null }
+}
+
 internal fun itemOfInfo(info: JSONObject): DouyinItem? {
     val list = info.optJSONArray("item_list") ?: return null
     val first = list.optJSONObject(0) ?: return null
@@ -367,6 +407,8 @@ internal fun itemOf(item: JSONObject): DouyinItem? {
         images = images,
         musicUrl = music?.optJSONObject("play_url")?.let(::firstUrl),
         musicTitle = music?.optString("title")?.ifBlank { null },
+        // 分享页 SSR 的音乐对象只有 mid/歌名/封面，播放地址要走 music/detail 补
+        musicId = music?.optString("mid")?.ifBlank { null },
     )
 }
 
