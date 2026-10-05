@@ -45,7 +45,7 @@ class GradesViewModel(private val container: AppContainer) : ViewModel() {
                     password = settings.password,
                 )
                 val adapter = SmartQzAdapter()
-                val session = adapter.connect(config)
+                val session = withContext(Dispatchers.IO) { adapter.connect(config) }
                 val grades = withContext(Dispatchers.IO) { session.loadGrades() }
                 session.close()
                 _state.value = GradesUiState(

@@ -248,6 +248,13 @@ fun QzktApp(
                     )
                 }
 
+                composable(Routes.GRADES) {
+                    GradesScreen(
+                        viewModel = gradesViewModel,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
                 composable(Routes.RESOLVE) {
                     ResolveScreen(
                         onBack = { navController.popBackStack() },
