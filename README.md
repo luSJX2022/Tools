@@ -388,17 +388,6 @@ WebView 里登录 → 会话 cookie 存进设置 → 后台定时同步拿这个
 
 ```
 
-要点与排错：
-
-- **版本号规则**：`versionCode` 永远 +1；`versionName` 三段递增；Release 的 tag 用
-  `vX.Y.Z`（应用内检查更新按它比较新旧）。
-- **gh 没登录**：`gh auth login` 按提示走一遍（本仓库是 luSJX2022/Tools）。
-- **push 连不上**（`Connection was reset` / 连接超时）：GitHub 偶发抽风，等一两分钟
-  重试 `git push origin main` 即可，提交不会丢。
-- **旧包装不上新包**：多半是忘了升 `versionCode`。
-- **忘了挂 APK**：`gh release upload vX.Y.Z Tools-vX.Y.Z.apk` 可以事后补传。
-- 用 Android Studio 的话：Build → Build App Bundle(s) / APK(s) → Build APK(s)，
-  产物在同一路径，其余步骤相同。
 
 Release 的 `body` 会作为更新说明显示在应用内（默认折叠 4 行，可展开）。
 
