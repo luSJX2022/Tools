@@ -1,4 +1,4 @@
-# Tools（Android）：课表 · 影视 · 链接解析
+# Tools（Android）
 
 一个原生 Android 工具箱应用，三个入口：
 
@@ -9,8 +9,6 @@
 - **链接解析**：B站 / 抖音 App 里「复制链接」出来的一整段文案（短链、带说明文字都行），
   粘进去解析成真实播放地址，直接播放。
 
-三个入口最后都汇到同一个**后台播放器**（Media3/ExoPlayer + MediaSessionService）：
-锁屏、切后台、页面被回收都还能继续放，支持手势、选集、清晰度切换和下载。
 
 - Kotlin + Jetpack Compose（Material 3）+ Media3 + OkHttp + DataStore
 - minSdk 26，无 Room / 无 Hilt（JSON 文件持久化 + 手写依赖容器，理由见下文）
@@ -180,7 +178,7 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 
 
 
-### 已知限制（不粉饰）
+### 已知限制
 
 1. **B站画质受登录状态限制**：不登录一般给到 720P。想上 1080P，把
    `Cookie: SESSDATA=…`（浏览器登录 B站 后从开发者工具里复制）填进「请求头」。
@@ -194,13 +192,12 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 
 ---
 
-## 六、播放器（内嵌播放页）
+## 六、播放页
 
-播放器页面**不在工具页显示**，由「影视」选集和「链接解析」跳进来，只负责播：
+播放页面由「影视」选集和「链接解析」跳进来，只负责播：
 Media3/ExoPlayer 解码（硬解失败自动回退软解），支持 HLS / DASH / MP4 直链。
 
-播放本体在 `PlaybackService`（MediaSessionService）里，页面通过 `MediaController`
-连上去控制，所以切后台 / 锁屏 / 页面被回收都还能继续放。
+
 
 ### 快捷手势（小窗和全屏都支持）
 
@@ -269,7 +266,6 @@ Media3/ExoPlayer 解码（硬解失败自动回退软解），支持 HLS / DASH 
 - 页面正文前 800 字 —— 解析不出来时，直接看页面到底写了什么
 - 导入结果（成功几条 / 为什么失败）
 
-还有「复制诊断信息」按钮。**如果还是不行，把这个面板的内容发我**，就能定位是排版不认识、还是跨域 frame 读不到。
 
 已知限制：如果课表在**跨域 iframe** 里，JS 读不到它的 `document`，抓取必然为空（诊断面板的地址列表里能看到那个 frame 的 URL）。
 
