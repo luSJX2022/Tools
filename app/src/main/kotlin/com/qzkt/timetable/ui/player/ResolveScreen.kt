@@ -237,8 +237,8 @@ fun ResolveScreen(
             }
 
             Text(
-                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行），图集会列出每张图的直链；" +
-                    "普通流地址（.m3u8 / 直链）不走解析直接给直链。",
+                text = "支持 B站 / 抖音 的分享链接（短链、带说明文字都行），图集会列出每张图的直链，" +
+                    "图文 / 视频带的 BGM 也能直接播；普通流地址（.m3u8 / 直链）不走解析直接给直链。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -254,15 +254,7 @@ fun ResolveScreen(
             resolved?.let { media ->
                 ResolvedCard(
                     media = media,
-                    onPlay = {
-                        onPlay(
-                            AnimePlayRequest(
-                                url = media.url,
-                                title = media.title ?: "",
-                                description = media.description,
-                            ),
-                        )
-                    },
+                    onPlay = onPlay,
                 )
             }
 
@@ -273,7 +265,7 @@ fun ResolveScreen(
 
 /** 解析结果卡：封面 / 标题 / 作者 / 发布时间 / 播放量 / 简介 / 直链（可复制）+ 播放按钮。 */
 @Composable
-private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
+private fun ResolvedCard(media: ResolvedMedia, onPlay: (AnimePlayRequest) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -284,6 +276,13 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
         if (copied) {
             delay(1500)
             copied = false
+        }
+    }
+    var copiedMusic by remember { mutableStateOf(false) }
+    LaunchedEffect(copiedMusic) {
+        if (copiedMusic) {
+            delay(1500)
+            copiedMusic = false
         }
     }
 
@@ -488,6 +487,39 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
             )
         }
 
+        media.musicUrl?.let { musicUrl ->
+            Spacer(Modifier.height(10.dp))
+            Text("背景音乐", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = media.musicTitle ?: "未命名音乐",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(musicUrl))
+                    copiedMusic = true
+                }) { Text(if (copiedMusic) "已复制" else "复制") }
+            }
+            // 图文作品没有视频，BGM 是它唯一能直接播的；视频作品也能单独听 BGM
+            Button(
+                onClick = {
+                    onPlay(
+                        AnimePlayRequest(
+                            url = musicUrl,
+                            title = "BGM · " + (media.musicTitle ?: media.title ?: ""),
+                            description = media.description,
+                        ),
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("播放 BGM") }
+        }
+
         media.warning?.let { warning ->
             Spacer(Modifier.height(6.dp))
             Text(
@@ -500,7 +532,18 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: () -> Unit) {
         // 图集没有视频可播，不放播放按钮
         if (media.url.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
-            Button(onClick = onPlay, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    onPlay(
+                        AnimePlayRequest(
+                            url = media.url,
+                            title = media.title ?: "",
+                            description = media.description,
+                        ),
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Text("播放")
             }
         }

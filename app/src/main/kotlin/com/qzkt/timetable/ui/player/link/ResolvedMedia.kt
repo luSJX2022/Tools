@@ -28,6 +28,10 @@ data class ResolvedMedia(
     val cover: String? = null,
     /** 图集作品的原图直链（普通视频为空）。 */
     val images: List<String> = emptyList(),
+    /** 作品带的背景音乐直链（抖音图文 / 视频作品可能有；没有 BGM 时为 null）。 */
+    val musicUrl: String? = null,
+    /** 背景音乐名（[musicUrl] 为空时无意义）。 */
+    val musicTitle: String? = null,
 )
 
 /**

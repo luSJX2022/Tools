@@ -136,6 +136,8 @@ class DouyinResolver(
             // 抖音没有单独的简介，作品文案（desc）就是它
             description = title,
             images = images,
+            musicUrl = musicUrl,
+            musicTitle = musicTitle,
         )
 
     /**
@@ -208,6 +210,9 @@ internal data class DouyinItem(
     val playCount: Long? = null,
     /** 图集作品的原图直链（视频作品为空）。 */
     val images: List<String> = emptyList(),
+    /** 作品带的背景音乐（图文作品的 BGM 就在这里面）。 */
+    val musicUrl: String? = null,
+    val musicTitle: String? = null,
 )
 
 /**
@@ -348,6 +353,9 @@ internal fun itemOf(item: JSONObject): DouyinItem? {
         }
     }.orEmpty()
     if (title == null && url == null && images.isEmpty()) return null
+    // 背景音乐：music.play_url 和 video.play_addr 同形状（{uri, url_list}）。
+    // 图文作品没有视频，BGM 是它唯一可播的媒体；部分作品（纯原创声）没有 play_url，为空正常。
+    val music = item.optJSONObject("music")
     return DouyinItem(
         title = title,
         playUrl = url,
@@ -357,6 +365,8 @@ internal fun itemOf(item: JSONObject): DouyinItem? {
         publishTime = item.optLong("create_time", 0L).takeIf { it > 0 },
         playCount = item.optJSONObject("statistics")?.optLong("play_count", 0L)?.takeIf { it > 0 },
         images = images,
+        musicUrl = music?.optJSONObject("play_url")?.let(::firstUrl),
+        musicTitle = music?.optString("title")?.ifBlank { null },
     )
 }
 

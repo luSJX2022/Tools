@@ -113,6 +113,29 @@ class DouyinResolverTest {
         assertEquals("", media.url)     // 图集不放幻灯片播放地址
         assertEquals("图文作品", media.title)
         assertEquals("千寻", media.author)
+        // 图文作品的 BGM 也要带出来：music.play_url 和 video.play_addr 同形状
+        assertEquals("https://cdn.example.com/music/bgm.mp3", media.musicUrl)
+        assertEquals("原声 · 千与千寻", media.musicTitle)
+    }
+
+    @Test
+    fun `视频作品也带 BGM`() = runBlocking {
+        val media = resolver().resolve(MediaLink.Douyin(url = "$base/s/xyz"))
+        assertEquals("https://cdn.example.com/music/bgm.mp3", media.musicUrl)
+        assertEquals("原声 · 千与千寻", media.musicTitle)
+    }
+
+    @Test
+    fun `作品没有音乐字段时 BGM 为空`() {
+        // 纯原创声等作品没有 music.play_url，BGM 区块整体不该出现
+        val html = "<script>window._ROUTER_DATA = " +
+            "{\"loaderData\":{\"video_(id)/page\":{\"videoInfoRes\":{\"item_list\":[{" +
+            "\"desc\":\"无声作品\",\"music\":{\"title\":\"原创\"}," +
+            "\"video\":{\"play_addr\":{\"url_list\":[\"https://cdn.example.com/aweme/v1/playwm/?video_id=n8\"]}}}]}}}};</script>"
+        val item = parseRouterData(html)
+        assertEquals("无声作品", item?.title)
+        assertNull(item?.musicUrl)
+        assertEquals("原创", item?.musicTitle)
     }
 
     /** 结构变过好几版：只要树里有带播放地址的 item，就得认得出来。 */
@@ -172,11 +195,15 @@ class DouyinResolverTest {
             "{\"desc\":\"图文作品\",\"author\":{\"nickname\":\"千寻\"},\"images\":[" +
                 "{\"url_list\":[\"https://cdn.example.com/p1.jpg\"]}," +
                 "{\"url_list\":[\"https://cdn.example.com/p2.jpg\"]}]," +
-                "\"video\":{\"play_addr\":{\"uri\":\"https://v.example.com/slides.mp4\",\"url_list\":[]}}}"
+                "\"video\":{\"play_addr\":{\"uri\":\"https://v.example.com/slides.mp4\",\"url_list\":[]}}," +
+                "\"music\":{\"title\":\"原声 · 千与千寻\"," +
+                "\"play_url\":{\"url_list\":[\"https://cdn.example.com/music/bgm.mp3\"]}}}"
         } else {
             "{\"desc\":\"测试抖音作品\"," +
                 "\"video\":{\"play_addr\":{\"uri\":\"v123\",\"url_list\":[" +
-                "\"https://cdn.example.com/aweme/v1/playwm/?video_id=v123&ratio=720p\"]}}}"
+                "\"https://cdn.example.com/aweme/v1/playwm/?video_id=v123&ratio=720p\"]}}," +
+                "\"music\":{\"title\":\"原声 · 千与千寻\"," +
+                "\"play_url\":{\"url_list\":[\"https://cdn.example.com/music/bgm.mp3\"]}}}"
         }
         return "<html><head><title>抖音分享</title></head><body><script>window._ROUTER_DATA = " +
             "{\"loaderData\":{\"video_(id)/page\":{\"videoInfoRes\":{\"item_list\":[$item]}}},\"errors\":{}};</script></body></html>"
