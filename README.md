@@ -8,6 +8,21 @@
   分类浏览 + 搜索，本地收藏与观看进度，选集后直接进播放器。
 - **链接解析**：B站 / 抖音 App 里「复制链接」出来的一整段文案（短链、带说明文字都行），
   粘进去解析成真实播放地址，直接播放。
+  图书（本地 TXT / 在线书源 / 国图检索）
+
+工具页「图书」进来，三个页签：
+
+- **书架**：导入本地 TXT（UTF-8 / GBK 自动识别），段落滚动阅读、进度记忆、
+  字号 / 夜间模式；阅读进度按段落下标存，重排不丢位置。
+- **书城**：接公开在线书源（当前为全本小说网），搜书 → 进书架 → 按章节在线阅读，
+  菜单里有上一章 / 目录 / 下一章。搜索是 JSONP + 自定义字符编码（见 `OnlineBookSource.kt`）。
+- **国图**：国家图书馆馆藏检索（opac.nlc.cn，Aleph 系统）。单次 GET 检索、每页 10 条、
+  会话制翻页；解析出题名 / 作者 / 出版社 / 年份 / ISBN / 系统号，条目可跳浏览器看馆藏。
+  **电子阅读与借阅需要国图读者账号登录，这里不代办**，只提供书目信息与跳转。
+  解析用真实抓取页面做单元测试（`app/src/test/resources/nlc_search.html` 是原样夹具）。
+
+国图 OPAC 是 HTTP 明文（和学校教务系统一样），靠 [network_security_config](app/src/main/res/xml/network_security_config.xml) 放行。
+
 
 
 - Kotlin + Jetpack Compose（Material 3）+ Media3 + OkHttp + DataStore
@@ -18,8 +33,7 @@
 
 ## 一、构建
 
-本项目自带一套**免安装**的构建工具链（不需要系统里预先有 JDK 或 Gradle），
-所以在一台干净机器上也能直接编译。
+本项目自带一套**免安装**的构建工具链（不需要系统里预先有 JDK 或 Gradle）。
 
 ### 1. 准备工具链
 
@@ -93,7 +107,6 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 %LOCALAPPDATA%/Android/Sdk/platform-tools/adb.exe install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-或者直接把 apk 拷进手机点击安装（需要在系统设置里允许安装未知来源应用）。
 
 ---
 
@@ -145,12 +158,6 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 工具页「影视」进来，数据来自四个**苹果CMS10 格式的资源站 JSON 接口**（都是公开接口，
 实测存活；分类 id 写死在 `VideoSources.kt` 里，逗号分隔的多个 id 会被当作一次聚合查询）：
 
-| 源 | 域名 | 说明 |
-|---|---|---|
-| 暴风资源 | `bfzyapi.com` | 默认源，m3u8 直连干净 |
-| 量子资源 | `cj.lziapi.com` | 备选，双播放源 |
-| 360资源 | `360zy.com` | HLS 是 AES-128 加密，ExoPlayer 原生支持 |
-| 非凡资源 | `ffzy5.tv` | HTTP 明文接口，要取第二个播放源（代码已处理） |
 
 - **页签**：电影 / 剧集 / 动漫 / 综艺 / 短剧 —— 每个页签聚合该源的一组子分类
   （接口查父分类不会带子分类内容，所以用逗号拼接叶子分类 id 一次查回）。
@@ -190,40 +197,6 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
    分享链接。
 5. 抖音作品需要登录（或已删除）时拿不到地址，界面会直说，而不是转圈。
 
----
-
-## 六、播放页
-
-播放页面由「影视」选集和「链接解析」跳进来，只负责播：
-Media3/ExoPlayer 解码（硬解失败自动回退软解），支持 HLS / DASH / MP4 直链。
-
-
-
-### 快捷手势（小窗和全屏都支持）
-
-| 手势 | 作用 |
-|---|---|
-| 横向拖动 | 快进 / 快退（整屏宽约 90 秒，松手生效，拖动全程有提示气泡） |
-| 左半边上下拖动 | 亮度（窗口亮度，只影响当前页面） |
-| 右半边上下拖动 | 音量 |
-| 双击 | 播放 / 暂停 |
-| 单击 | 显示 / 隐藏控制条 |
-
-手势挂在 PlayerView 的触摸监听上：控制条上的按钮（播放、进度条、选集、清晰度、
-全屏、设置）是它的子 View，触摸优先分发给子 View，所以手势和控制条互不干扰。
-
-### 选集与清晰度
-
-控制条上的「选集」「清晰度」按钮（排在全屏按钮左边）点开**暗色菜单**，
-样式与 media3 自带的设置菜单一致：
-
-- 选集：当前集打勾、看过的变淡，点任意一集原地切集（进度自动记录）；
-- 清晰度：列出当前流的分辨率，「自动」+ 各档位，用轨道选择参数限高切换。
-
-### 下载
-
-正在播的那一路点「下载到本地」就能存下来（带进度）。下载用的是**和播放完全相同的
-请求头** —— B站/抖音的 CDN 少了 Referer / UA 就是 403。中途取消或失败会把半截文件清掉。
 
 | 系统 | 位置 | 说明 |
 |---|---|---|
@@ -240,7 +213,7 @@ Media3/ExoPlayer 解码（硬解失败自动回退软解），支持 HLS / DASH 
 
 ---
 
-## 七、网页导入失败 / 登录后白屏怎么办
+## 六、网页导入失败 / 登录后白屏怎么办
 
 网页导入用的是系统 WebView。有几个坑是这一类教务系统必踩的，代码里已经处理了：
 
@@ -271,7 +244,7 @@ Media3/ExoPlayer 解码（硬解失败自动回退软解），支持 HLS / DASH 
 
 ---
 
-## 八、各校强智字段不一样，课表显示不出来怎么办
+## 七、各校强智字段不一样，课表显示不出来怎么办
 
 强智有多个版本，同一个接口 `getKbcxAzc` 返回的字段名各校不同。本项目用
 **别名表 + 启发式推断**尽量兜住，但仍可能遇到没见过的写法。
@@ -289,7 +262,7 @@ Media3/ExoPlayer 解码（硬解失败自动回退软解），支持 HLS / DASH 
 
 ---
 
-## 九、代码结构
+## 八、代码结构
 
 ```
 app/src/main/kotlin/com/qzkt/timetable/
@@ -375,7 +348,7 @@ WebView 里登录 → 会话 cookie 存进设置 → 后台定时同步拿这个
 
 ---
 
-## 十、测试
+## 九、测试
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -403,7 +376,7 @@ WebView 里登录 → 会话 cookie 存进设置 → 后台定时同步拿这个
 
 ---
 
-## 十一、检查更新与发新版
+## 十、检查更新与发新版
 
 设置页 →「关于」→「检查更新」：读 GitHub Releases 的最新版本，
 和当前版本号**逐段数值比较**（`1.2.10 > 1.2.9`，带不带 `v` 前缀都认）。
@@ -412,37 +385,7 @@ WebView 里登录 → 会话 cookie 存进设置 → 后台定时同步拿这个
   （Release 里传了 `.apk` 附件就跳浏览器下载 APK，没传就跳发布页）；
 - 仓库还没有 Release，或当前已是最新 → 明确提示。
 
-**发一版的固定流程**（Git Bash，可整段照抄，把版本号替换掉即可）：
 
-```bash
-cd /d/C/qzkt
-
-# 0) 升版本号：编辑 app/build.gradle.kts，两行都要动 ——
-#    versionCode  加 1（安卓用它判断能否覆盖安装，忘了改旧包就装不上新包）
-#    versionName  升一档（应用内检查更新显示的就是它，如 "1.0.8" → "1.0.9"）
-
-# 1) 打包（JAVA_HOME 指向项目自带 JDK，本机不用装 Java）
-export JAVA_HOME="$PWD/.toolchain/jdk-21"
-./gradlew.bat :app:assembleDebug
-
-# 2) 取出 APK，按版本号重命名（放哪个目录都行）
-cp app/build/outputs/apk/debug/app-debug.apk /d/tmp/Tools-v1.0.9.apk
-
-# 3) 写更新说明（应用内「检查更新」展示的就是这段）
-cat > /d/tmp/notes.md << 'EOF'
-- 本次改动一
-- 本次改动二
-EOF
-
-# 4) 提交推送代码（含版本号改动）
-git add -A
-git commit -m "版本号升至 1.0.9"
-git push origin main
-
-# 5) 发 Release：tag 带 v 前缀，挂上 APK
-gh release create v1.0.9 /d/tmp/Tools-v1.0.9.apk \
-  --title "v1.0.9" \
-  --notes-file /d/tmp/notes.md
 ```
 
 要点与排错：
@@ -461,20 +404,6 @@ Release 的 `body` 会作为更新说明显示在应用内（默认折叠 4 行�
 
 ---
 
-## 十二、图书（本地 TXT / 在线书源 / 国图检索）
-
-工具页「图书」进来，三个页签：
-
-- **书架**：导入本地 TXT（UTF-8 / GBK 自动识别），段落滚动阅读、进度记忆、
-  字号 / 夜间模式；阅读进度按段落下标存，重排不丢位置。
-- **书城**：接公开在线书源（当前为全本小说网），搜书 → 进书架 → 按章节在线阅读，
-  菜单里有上一章 / 目录 / 下一章。搜索是 JSONP + 自定义字符编码（见 `OnlineBookSource.kt`）。
-- **国图**：国家图书馆馆藏检索（opac.nlc.cn，Aleph 系统）。单次 GET 检索、每页 10 条、
-  会话制翻页；解析出题名 / 作者 / 出版社 / 年份 / ISBN / 系统号，条目可跳浏览器看馆藏。
-  **电子阅读与借阅需要国图读者账号登录，这里不代办**，只提供书目信息与跳转。
-  解析用真实抓取页面做单元测试（`app/src/test/resources/nlc_search.html` 是原样夹具）。
-
-国图 OPAC 是 HTTP 明文（和学校教务系统一样），靠 [network_security_config](app/src/main/res/xml/network_security_config.xml) 放行。
 
 ---
 
