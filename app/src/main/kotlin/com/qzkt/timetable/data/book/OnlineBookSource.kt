@@ -144,13 +144,10 @@ class Quanben5Source(
     override suspend fun content(chapter: OnlineChapter): String = withContext(Dispatchers.IO) {
         val doc = fetchDoc(chapter.url)
         val element = doc.selectFirst("#content") ?: error("章节内容缺失（页面可能改版）")
-        val withBreaks = element.html().replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-        val plain = withBreaks
-            .replace(Regex("<[^>]+>"), "")
-            .replace("&nbsp;", " ")
-            .trim()
         // 站点把部分常用字用『』包起来防爬，里层才是真字，去掉括号即可还原
-        plain.replace("『", "").replace("』", "")
+        element.textWithBreaks()
+            .replace("『", "").replace("』", "")
+            .stripSiteJunk()
     }
 
     private suspend fun fetchDoc(path: String) = withContext(Dispatchers.IO) {
@@ -207,6 +204,58 @@ object BookSources {
 
     /** Uri.encode 的包装：data 层直接用安卓的编码器（与浏览器 encodeURI 行为一致）。 */
     fun encodeComponent(value: String): String = Uri.encode(value)
+}
+
+/**
+ * 正文容器 → 纯文本。
+ *
+ * 书站页面把广告脚本直接塞进正文容器：整段 `<script>` 留在里面的话，
+ * 只删标签会把脚本代码当正文显示出来。这里先把 script/style 连同内容一起删掉，
+ * `<br>` 换成换行，再用 Jsoup 取文本 —— 实体（`&gt;` 之类）随之正确反转义，
+ * 不会像正则剥标签那样留下半转义的残字。
+ */
+internal fun org.jsoup.nodes.Element.textWithBreaks(): String {
+    select("script, style").remove()
+    val html = html().replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+    // wholeText 会把 &nbsp; 转成不换行空格，统一回普通空格
+    return Jsoup.parse(html).wholeText().replace(160.toChar(), ' ') // 160 = U+00A0 不换行空格
+}
+
+/**
+ * 剔除书站模板混进正文的杂行。
+ *
+ * 实测（kunnu8 模板「落霞读书」）正文里会带上：面包屑（首页&gt; 书&gt; 卷&gt; 章）、
+ * 重复的章节标题、「关灯 护眼 小 中 大 繁 直达底部」字号按钮、「上一章/下一章」导航、
+ * adsbygoogle 广告和脚本残留。这些特征不可能出现在小说正文里，逐行滤掉；
+ * 相邻的完全相同行（站点把章节标题连贴两遍）也只留一份。
+ */
+internal fun String.stripSiteJunk(): String {
+    fun String.isSiteJunk(): Boolean {
+        val folded = replace(" ", "")
+        return folded.length < 60 && (
+            folded.contains("落霞读书") ||
+                folded.contains("直达底部") ||
+                folded.startsWith("首页>") ||
+                folded.startsWith("上一章") ||
+                folded.startsWith("下一章") ||
+                folded.startsWith("上一頁") ||
+                folded.startsWith("下一頁") ||
+                folded.contains("adsbygoogle") ||
+                contains("document.") ||
+                contains("window.") ||
+                contains("appendChild") ||
+                contains("function(") ||
+                contains("readyState")
+            )
+    }
+
+    val kept = mutableListOf<String>()
+    for (line in split("\n").map { it.trim() }) {
+        if (line.isBlank() || line.isSiteJunk()) continue
+        if (kept.isNotEmpty() && kept.last() == line) continue // 相邻重复行（站点重复贴的标题）
+        kept += line
+    }
+    return kept.joinToString("\n").trim()
 }
 
 /**
@@ -301,12 +350,10 @@ class Kunnu8Source(
         }
         val doc = Jsoup.parse(body, baseUrl)
         val element = doc.selectFirst("#nr_body") ?: error("章节内容缺失（页面可能改版）")
-        val withBreaks = element.html().replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-        val plain = withBreaks
-            .replace(Regex("<[^>]+>"), "")
-            .replace("&nbsp;", " ")
-        // 逐行剔除广告（鲲`弩`小`说 w w w … 之类的推广行）
-        plain.split("\n")
+        // 先剥掉正文里的 script/style 并反转义实体，再逐行剔除广告
+        // （鲲`弩`小`说 w w w … 之类的推广行），最后剔除书站模板杂行
+        element.textWithBreaks()
+            .split("\n")
             .map { it.replace("『", "").replace("』", "").trim() }
             .filter { line ->
                 val folded = line.replace(" ", "").lowercase()
@@ -315,7 +362,7 @@ class Kunnu8Source(
                     !folded.contains("www") && !folded.contains("章节内容缺少")
             }
             .joinToString("\n")
-            .trim()
+            .stripSiteJunk()
     }
 
     private suspend fun fetchDoc(path: String) = withContext(Dispatchers.IO) {
