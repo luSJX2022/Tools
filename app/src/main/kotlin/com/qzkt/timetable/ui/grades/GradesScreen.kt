@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,6 +42,8 @@ import com.qzkt.timetable.jw.GradeInfo
 fun GradesScreen(
     viewModel: GradesViewModel,
     onBack: () -> Unit,
+    /** 「该去应用内登录」类错误的出口：直接跳进 WebView 登录页。 */
+    onOpenWebLogin: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val errorMsg = state.error
@@ -79,6 +82,17 @@ fun GradesScreen(
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
                     )
+                    if (state.needsRelogin) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "在页面里登录一次，之后成绩就能直接查了。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Button(onClick = onOpenWebLogin) { Text("去应用内登录") }
+                    }
                     Spacer(Modifier.height(12.dp))
                     TextButton(onClick = { viewModel.refresh() }) { Text("重试") }
                 }

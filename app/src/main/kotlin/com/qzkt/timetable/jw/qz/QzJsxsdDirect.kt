@@ -1,11 +1,14 @@
 package com.qzkt.timetable.jw.qz
 
 import com.qzkt.timetable.jw.JwException
+import com.qzkt.timetable.jw.GradeInfo
+import com.qzkt.timetable.jw.parseGradesHtml
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter.Companion.TIMETABLE_PATHS
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter.Companion.resolveBase
 import com.qzkt.timetable.model.CourseSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -45,6 +48,62 @@ internal class QzJsxsdDirect(
         val loggedIn: Boolean = true,
     ) {
         val ok: Boolean get() = sessions.isNotEmpty()
+    }
+
+    data class GradesOutcome(
+        /** 解析出来的成绩；为空表示这条路没走通。 */
+        val grades: List<GradeInfo>,
+        /**
+         * 是否已经是登录状态。
+         *
+         * 成绩页被打回登录页（会话没登进去 / 已过期）时为 false，
+         * 调用方应当引导重新在应用内登录，而不是报「查询失败」。
+         */
+        val loggedIn: Boolean,
+    )
+
+    /**
+     * 拿着**已有的会话 cookie** 直接拉成绩页（`/jsxsd/kscj/cjcx_query`）。
+     *
+     * 有的学校登录页有反自动化校验，账号密码这条路走不通（成绩页以前因此直接废掉）；
+     * 但用户在应用内登录一次之后会话 cookie 就在手上，和课表一样能直接查。
+     *
+     * 先试 GET（大部分学校直接返回整张成绩表），不行再 POST 一次空查询
+     * （查询条件全空 = 全部学期，这是表单版学校的取全部方式）。
+     */
+    suspend fun fetchGrades(base: String, cookie: String?): GradesOutcome = withContext(Dispatchers.IO) {
+        val client = clientFactory()
+        val normalizedBase = runCatching { resolveBase(base) }.getOrElse { throw JwException("地址不对：$base") }
+        val url = "$normalizedBase/kscj/cjcx_query"
+        var sawLoginPage = false
+
+        fun handle(html: String): List<GradeInfo>? {
+            if (html.isLoginPage()) {
+                sawLoginPage = true
+                return null
+            }
+            val grades = parseGradesHtml(html)
+            return grades.ifEmpty { null }
+        }
+
+        try {
+            val direct = runCatching { get(client, url, cookie) }.getOrNull()
+            if (direct != null) {
+                handle(direct)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
+            }
+
+            val queried = runCatching {
+                post(client, url, cookie, form = mapOf("kksj" to "", "kcxz" to "", "kcmc" to "", "xsfs" to "1"))
+            }.getOrNull()
+            if (queried != null) {
+                handle(queried)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
+            }
+
+            GradesOutcome(emptyList(), loggedIn = !sawLoginPage)
+        } finally {
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
     }
 
     suspend fun fetchTimetable(base: String, cookie: String?): Outcome = withContext(Dispatchers.IO) {
@@ -129,4 +188,24 @@ internal class QzJsxsdDirect(
             return text
         }
     }
+
+    private fun post(client: OkHttpClient, url: String, cookie: String?, form: Map<String, String>): String {
+        val httpUrl = url.toHttpUrlOrNull() ?: throw JwException("地址格式不对：$url")
+        val formBody = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
+        val builder = Request.Builder()
+            .url(httpUrl)
+            .post(formBody)
+            .header("User-Agent", QzHttp.USER_AGENT)
+            .header("Referer", url)
+        if (!cookie.isNullOrBlank()) builder.header("Cookie", cookie)
+
+        client.newCall(builder.build()).execute().use { response ->
+            val text = QzHttp.decodeBody(response.peekBody(Long.MAX_VALUE).bytes(), response.header("Content-Type"))
+            if (!response.isSuccessful) throw JwException("HTTP ${response.code}")
+            return text
+        }
+    }
+
+    /** 页面是不是登录页（会话没登进去 / 已过期时，学校会把任何地址重定向回它）。 */
+    private fun String.isLoginPage(): Boolean = contains("userAccount") || contains("loginForm")
 }

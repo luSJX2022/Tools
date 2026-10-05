@@ -2,6 +2,7 @@ package com.qzkt.timetable.jw
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.jsoup.Jsoup
 
 /** 教务系统返回的一条成绩记录。 */
 data class GradeInfo(
@@ -72,4 +73,57 @@ private fun parseGradeItem(obj: JSONObject): GradeInfo? {
         semester = semester,
         courseType = courseType,
     )
+}
+
+/**
+ * 解析成绩查询页的 HTML 表格（强智网页版 `/jsxsd/kscj/cjcx_query`）。
+ *
+ * 应用内登录那条路拿的是网页版会话，成绩页返回的是一整张 `<table id="dataList">`，
+ * 不是 app.do 的 JSON，所以单独写这个解析器。
+ *
+ * 各校表头文字和列序不一（课程号/课程名/学分/成绩/课程性质/学年学期…），
+ * 按表头文字映射列而不是写死列号；找不到「课程」列就当解析失败返回空。
+ */
+internal fun parseGradesHtml(html: String): List<GradeInfo> {
+    val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return emptyList()
+    val table = doc.select("table#dataList").first()
+        ?: doc.select("table").firstOrNull { t ->
+            t.select("th").any { it.text().replace(Regex("\\s"), "").contains("课程") }
+        }
+        ?: return emptyList()
+
+    // 表头可能占两行（合并单元格），取 th 最多的一行当表头
+    val headerRow = table.select("tr").maxByOrNull { it.select("th").size } ?: return emptyList()
+    val headers = headerRow.select("th").map { it.text().replace(Regex("\\s"), "") }
+
+    // 按别名的先后顺序找列：「课程名」优先于笼统的「课程」，免得命中「课程号」
+    fun col(vararg aliases: String): Int? {
+        for (alias in aliases) {
+            val index = headers.indexOfFirst { it == alias || it.contains(alias) }
+            if (index >= 0) return index
+        }
+        return null
+    }
+    val nameCol = col("课程名", "课程名称", "课程") ?: return emptyList()
+    val scoreCol = col("成绩", "总评", "分数")
+    val creditsCol = col("学分")
+    val semesterCol = col("学年学期", "学期")
+    val typeCol = col("课程性质", "性质", "类别")
+
+    return table.select("tr")
+        .filter { it.select("td").size >= 2 }
+        .mapNotNull { row ->
+            val cells = row.select("td")
+            fun cell(index: Int?): String? =
+                index?.let { cells.getOrNull(it)?.text()?.trim()?.ifBlank { null } }
+            val courseName = cell(nameCol) ?: return@mapNotNull null
+            GradeInfo(
+                courseName = courseName,
+                score = cell(scoreCol) ?: "",
+                credits = cell(creditsCol),
+                semester = cell(semesterCol),
+                courseType = cell(typeCol),
+            )
+        }
+        .filter { it.courseName.isNotBlank() }
 }

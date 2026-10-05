@@ -252,6 +252,7 @@ fun QzktApp(
                     GradesScreen(
                         viewModel = gradesViewModel,
                         onBack = { navController.popBackStack() },
+                        onOpenWebLogin = { navController.navigate(Routes.WEB) },
                     )
                 }
 

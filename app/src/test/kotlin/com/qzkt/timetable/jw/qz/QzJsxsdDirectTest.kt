@@ -29,11 +29,36 @@ class QzJsxsdDirectTest {
     /** 让第一个候选地址失效，用来验证会不会继续往后试。 */
     private var firstPathBroken = false
 
+    /** 让成绩页 GET 只给空表，用来验证会不会补一次 POST 空查询。 */
+    private var gradesGetEmpty = false
+
     private val validCookie = "bzb_jsxsd=SESSION123"
 
     private val loginPage = """
     <html><body>
       <form id="loginForm" action="/jsxsd/xk/LoginToXk"><input name="userAccount"></form>
+    </body></html>
+    """
+
+    /** 仿强智 jsxsd 成绩查询：dataList 表，表头文字各校不一。 */
+    private val gradesPage = """
+    <html><body>
+    <table id="dataList">
+      <tr>
+        <th>课程号</th><th>课程名</th><th>学分</th><th>成绩</th><th>课程性质</th><th>学年学期</th>
+      </tr>
+      <tr><td>A001</td><td>高等数学</td><td>4.0</td><td>87</td><td>必修</td><td>2025-2026-1</td></tr>
+      <tr><td>A002</td><td>大学物理</td><td>3.0</td><td>优秀</td><td>必修</td><td>2025-2026-1</td></tr>
+    </table>
+    </body></html>
+    """
+
+    /** 成绩页 GET 版：只给了表头，一行成绩都没有。 */
+    private val gradesEmptyPage = """
+    <html><body>
+    <table id="dataList">
+      <tr><th>课程号</th><th>课程名</th><th>学分</th><th>成绩</th></tr>
+    </table>
     </body></html>
     """
 
@@ -137,6 +162,53 @@ class QzJsxsdDirectTest {
         assertEquals("https://jw.hdxy.edu.cn/jsxsd", QzJsxsdAdapter.resolveBase("jw.hdxy.edu.cn/jsxsd/"))
     }
 
+    @Test
+    fun `带着会话 cookie 能直接查出成绩`() = runBlocking {
+        val outcome = QzJsxsdDirect().fetchGrades(base, validCookie)
+
+        assertTrue("应当解析出成绩，实际是 loggedIn=${outcome.loggedIn}", outcome.grades.isNotEmpty())
+        assertTrue(outcome.loggedIn)
+        assertEquals(2, outcome.grades.size)
+
+        val math = outcome.grades.first { it.courseName == "高等数学" }
+        assertEquals("87", math.score)
+        assertEquals("4.0", math.credits)
+        assertEquals("必修", math.courseType)
+        assertEquals("2025-2026-1", math.semester)
+
+        // 等级制成绩原样保留
+        assertEquals("优秀", outcome.grades.first { it.courseName == "大学物理" }.score)
+    }
+
+    @Test
+    fun `成绩页 GET 只有空表时会补一次 POST 空查询`() = runBlocking {
+        gradesGetEmpty = true
+        val outcome = QzJsxsdDirect().fetchGrades(base, validCookie)
+
+        assertEquals(2, outcome.grades.size)
+        assertTrue(outcome.loggedIn)
+        // GET 和 POST 都打到 cjcx_query
+        assertEquals(
+            2,
+            requestedPaths.count { it.endsWith("cjcx_query") },
+        )
+    }
+
+    @Test
+    fun `成绩查询时会话过期会判定为未登录`() = runBlocking {
+        val outcome = QzJsxsdDirect().fetchGrades(base, "bzb_jsxsd=EXPIRED")
+
+        assertTrue(outcome.grades.isEmpty())
+        assertFalse("应当判定为未登录", outcome.loggedIn)
+    }
+
+    @Test
+    fun `课程号列不会被误当成课程名`() = runBlocking {
+        // 表头里「课程号」排在「课程名」前面，映射必须按别名优先级而不是列号顺序
+        val outcome = QzJsxsdDirect().fetchGrades(base, validCookie)
+        assertTrue(outcome.grades.none { it.courseName == "A001" })
+    }
+
     // ------------------------------------------------------------------ 假服务端
 
     private fun handle(exchange: HttpExchange) {
@@ -153,6 +225,10 @@ class QzJsxsdDirectTest {
             brokenFirst -> loginPage
             path.endsWith("xskb_list.do") -> timetablePage
             path.endsWith("xskbcx_cxXsKb.html") -> timetablePage
+            // 成绩页：GET 可能是空表（表单版学校），POST 空查询才出全部成绩
+            path.endsWith("cjcx_query") && exchange.requestMethod == "GET" ->
+                if (gradesGetEmpty) gradesEmptyPage else gradesPage
+            path.endsWith("cjcx_query") -> gradesPage
             else -> loginPage
         }
         respond(exchange, 200, body)
