@@ -235,7 +235,7 @@ private fun PersonalizationSection(settings: AppSettings, onUpdate: ((AppSetting
             Spacer(Modifier.height(4.dp))
         }
         Text(
-            text = "关掉的入口在工具页不再显示，随时可以再打开",
+            text = "关掉的入口在工具页不再显示；工具页右上角的「编辑」里也能改，还能调顺序",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

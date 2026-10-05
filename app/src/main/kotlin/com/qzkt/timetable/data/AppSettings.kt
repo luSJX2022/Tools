@@ -41,6 +41,11 @@ data class AppSettings(
      * 反序列化出来自然等于全显示，不用做迁移。
      */
     val hiddenToolKeys: List<String> = emptyList(),
+    /**
+     * 工具页入口的排列顺序（存 key）。首页编辑模式里调顺序后写回这里；
+     * 缺省/老版本数据为空，[displayToolOrder] 会退回默认顺序。
+     */
+    val toolOrder: List<String> = emptyList(),
     /** 是否已完成首次配置。 */
     val configured: Boolean = false,
     /**
@@ -59,6 +64,19 @@ data class AppSettings(
     val hasSession: Boolean get() = sessionCookie.isNotBlank()
 
     companion object {
+        /** 工具页全部入口 key 的默认顺序。 */
+        val DEFAULT_TOOL_ORDER: List<String> = listOf("timetable", "book", "resolve", "anime", "grades")
+
+        /**
+         * 把存的 toolOrder 清洗成可显示顺序：丢掉已下线的 key、
+         * 补上新增入口（排到末尾）。老版本存的 JSON 没有这个字段，
+         * 传空进来自然等于默认顺序。
+         */
+        fun displayToolOrder(saved: List<String>): List<String> {
+            val known = saved.filter { it in DEFAULT_TOOL_ORDER }
+            return known + (DEFAULT_TOOL_ORDER - known.toSet())
+        }
+
         /**
          * 默认作息：青岛农业大学海都学院教学时间表（11 节）。
          *

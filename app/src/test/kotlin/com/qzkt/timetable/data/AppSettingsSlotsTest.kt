@@ -69,4 +69,19 @@ class AppSettingsSlotsTest {
         // 不等于旧默认值，所以保持原样（由设置页让用户自己加回来）
         assertTrue(migrated.slots.isEmpty())
     }
+
+    @Test
+    fun `空的 toolOrder 退回默认顺序`() {
+        assertEquals(AppSettings.DEFAULT_TOOL_ORDER, AppSettings.displayToolOrder(emptyList()))
+    }
+
+    @Test
+    fun `toolOrder 丢掉下线 key 并补上新增入口`() {
+        val saved = listOf("anime", "ghost", "timetable")
+        val order = AppSettings.displayToolOrder(saved)
+        // 下线的 ghost 被丢掉，剩下的按存的顺序，新增的 book/resolve/grades 排到末尾
+        assertEquals(listOf("anime", "timetable", "book", "resolve", "grades"), order)
+        // 结果一定是全量 key，不漏不重
+        assertEquals(AppSettings.DEFAULT_TOOL_ORDER.toSet(), order.toSet())
+    }
 }
