@@ -26,18 +26,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -81,6 +85,8 @@ fun BookshelfScreen(
     var tab by rememberSaveable { mutableStateOf("shelf") }   // shelf：书架，store：书城
     var query by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
+    // 图书设置（书源 / 阅读偏好 / 书架数据）：原来在设置页，挪到本页右上角
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -103,6 +109,11 @@ fun BookshelfScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "图书设置")
                     }
                 },
             )
@@ -193,6 +204,128 @@ fun BookshelfScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            },
+        )
+    }
+
+    if (showSettings) {
+        BookSettingsDialog(
+            viewModel = viewModel,
+            onDismiss = { showSettings = false },
+        )
+    }
+}
+
+/** 图书设置：在线书源切换 + 阅读偏好（字号 / 夜间）+ 书架数据（从设置页挪进来，右上角齿轮打开）。 */
+@Composable
+private fun BookSettingsDialog(viewModel: BookViewModel, onDismiss: () -> Unit) {
+    val fontSize by viewModel.fontSize.collectAsStateWithLifecycle()
+    val night by viewModel.night.collectAsStateWithLifecycle()
+    val selectedSourceKey by viewModel.sourceKey.collectAsStateWithLifecycle()
+    val books by viewModel.books.collectAsStateWithLifecycle()
+    var confirmClearBooks by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("图书设置") },
+        text = {
+            Column {
+                // 在线书源：单选切换（某个源连不上就换一个）
+                Text("在线书源", fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                viewModel.availableSources.forEach { source ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setOnlineSource(source.key) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = source.key == selectedSourceKey,
+                            onClick = { viewModel.setOnlineSource(source.key) },
+                        )
+                        Text(
+                            text = source.name,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+
+                // 阅读偏好
+                Text("阅读偏好", fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("正文字号", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { viewModel.setFontSize(fontSize - 1) }, enabled = fontSize > 14) {
+                        Text("A-")
+                    }
+                    Text(fontSize.toString() + " sp", fontSize = 13.sp)
+                    TextButton(onClick = { viewModel.setFontSize(fontSize + 1) }, enabled = fontSize < 30) {
+                        Text("A+")
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("夜间模式", fontSize = 14.sp)
+                        Text(
+                            text = "阅读页用深色底（阅读页内也能切）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = night,
+                        onCheckedChange = { viewModel.setNight(it) },
+                    )
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+
+                // 图书数据
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("书架数据", fontSize = 13.sp)
+                        Text(
+                            text = if (books.isEmpty()) "书架是空的" else "书架 ${books.size} 本",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(
+                        onClick = { confirmClearBooks = true },
+                        enabled = books.isNotEmpty(),
+                    ) { Text("清空书架") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+    )
+
+    if (confirmClearBooks) {
+        AlertDialog(
+            onDismissRequest = { confirmClearBooks = false },
+            title = { Text("清空书架？") },
+            text = { Text("会移除全部书籍（本地 TXT 和在线书）与阅读进度，不影响阅读偏好设置。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearAllBooks()
+                    confirmClearBooks = false
+                }) { Text("清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearBooks = false }) { Text("取消") }
             },
         )
     }

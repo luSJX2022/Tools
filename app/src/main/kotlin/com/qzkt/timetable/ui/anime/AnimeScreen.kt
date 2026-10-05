@@ -29,14 +29,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -46,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -81,6 +86,8 @@ fun AnimeScreen(
     val progress by viewModel.progress.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
     var queryInput by rememberSaveable { mutableStateOf("") }
+    // 影视设置（资源站 / 收藏管理）：原来在设置页，挪到本页右上角
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -89,6 +96,11 @@ fun AnimeScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "影视设置")
                     }
                 },
             )
@@ -196,6 +208,109 @@ fun AnimeScreen(
                 )
             }
         }
+    }
+
+    if (showSettings) {
+        AnimeSettingsDialog(
+            viewModel = viewModel,
+            favoriteCount = favorites.size,
+            onDismiss = { showSettings = false },
+        )
+    }
+}
+
+/** 影视设置：资源站切换 + 收藏数据管理（从设置页挪进来，右上角齿轮打开）。 */
+@Composable
+private fun AnimeSettingsDialog(
+    viewModel: AnimeViewModel,
+    favoriteCount: Int,
+    onDismiss: () -> Unit,
+) {
+    val sourceKey by viewModel.sourceKey.collectAsStateWithLifecycle()
+    var confirmClearFavorites by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("影视设置") },
+        text = {
+            Column {
+                Text("资源站", fontSize = 13.sp)
+                Spacer(Modifier.height(4.dp))
+                viewModel.availableSources.forEach { source ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.selectSource(source.key) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = source.key == sourceKey,
+                            onClick = { viewModel.selectSource(source.key) },
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(source.name, fontSize = 14.sp)
+                            Text(
+                                text = source.baseUrl
+                                    .removePrefix("https://").removePrefix("http://")
+                                    .substringBefore('/') +
+                                    " · " + source.categories.joinToString("／") { it.first },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "某个源打不开或内容不全时换个试试",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("影视收藏", fontSize = 14.sp)
+                        Text(
+                            text = "本地保存的收藏与观看进度，" +
+                                if (favoriteCount > 0) "当前 $favoriteCount 部" else "当前暂无",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (favoriteCount > 0) {
+                        TextButton(onClick = { confirmClearFavorites = true }) { Text("清空") }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+    )
+
+    if (confirmClearFavorites) {
+        AlertDialog(
+            onDismissRequest = { confirmClearFavorites = false },
+            title = { Text("清空收藏？") },
+            text = { Text("会删掉全部收藏和观看进度，不影响视频缓存。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearFavorites()
+                    confirmClearFavorites = false
+                }) { Text("清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearFavorites = false }) { Text("取消") }
+            },
+        )
     }
 }
 

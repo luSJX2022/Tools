@@ -112,7 +112,6 @@ fun QzktApp(
     val webImportResult by viewModel.webImportResult.collectAsStateWithLifecycle()
     val animeFavorites by animeViewModel.favorites.collectAsStateWithLifecycle()
     val animeSession by animeViewModel.animeSession.collectAsStateWithLifecycle()
-    val animeSourceKey by animeViewModel.sourceKey.collectAsStateWithLifecycle()
 
     val snackbarHost = remember { SnackbarHostState() }
 
@@ -342,12 +341,6 @@ fun QzktApp(
                     SettingsScreen(
                         settings = settings,
                         onUpdate = viewModel::saveSettings,
-                        animeFavoriteCount = animeFavorites.size,
-                        onClearAnimeFavorites = { animeViewModel.clearFavorites() },
-                        videoSources = animeViewModel.availableSources,
-                        videoSourceKey = animeSourceKey,
-                        onSelectVideoSource = { animeViewModel.selectSource(it) },
-                        bookViewModel = bookViewModel,
                     )
                 }
 
