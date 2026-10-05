@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,7 +26,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +41,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -360,50 +365,118 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: (AnimePlayRequest) -> Uni
         Spacer(Modifier.height(10.dp))
 
         if (media.images.isNotEmpty()) {
-            // 抖音图集：没有视频可播，把每张原图的直链列出来供复制保存
+            // 抖音图集：直接渲染缩略图网格，点图看大图，每张右上角单独下载
             Text(
                 text = "图集（共 ${media.images.size} 张）",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(4.dp))
-            var copiedImage by remember { mutableStateOf(-1) }
-            LaunchedEffect(copiedImage) {
-                if (copiedImage >= 0) {
-                    delay(1500)
-                    copiedImage = -1
+            // 每张的下载状态：index → 「下载中」/「已保存」/「失败」，没在表里就是未下载
+            val imageStatus = remember { mutableStateMapOf<Int, String>() }
+            val imageDownloader = remember { MediaDownloader() }
+            val baseName = (media.title ?: "抖音图集")
+                .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                .take(40)
+
+            fun downloadOne(index: Int, imageUrl: String) {
+                if (imageStatus[index] == "下载中") return
+                scope.launch {
+                    imageStatus[index] = "下载中"
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val target = VideoDownloadStore(context).prepare("$baseName-${index + 1}.jpg")
+                            try {
+                                imageDownloader.download(imageUrl, emptyMap(), target.open()) { _, _ -> }
+                                target.finish()
+                                "已保存"
+                            } catch (e: CancellationException) {
+                                target.abort()
+                                throw e
+                            } catch (e: Exception) {
+                                target.abort()
+                                throw e
+                            }
+                        }.getOrElse { if (it is CancellationException) throw it else "失败" }
+                    }
+                    imageStatus[index] = result
                 }
             }
-            media.images.forEachIndexed { index, imageUrl ->
+
+            media.images.chunked(3).forEachIndexed { rowIndex, rowImages ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 2.dp)
-                        .clickable { viewerIndex = index },
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(
-                        text = "图 ${index + 1}",
-                        fontSize = 13.sp,
-                        modifier = Modifier.width(44.dp),
-                    )
-                    Text(
-                        text = imageUrl,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = {
-                        clipboard.setText(AnnotatedString(imageUrl))
-                        copiedImage = index
-                    }) { Text(if (copiedImage == index) "已复制" else "复制") }
+                    rowImages.forEachIndexed { colIndex, imageUrl ->
+                        val index = rowIndex * 3 + colIndex
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(3f / 4f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { viewerIndex = index },
+                        ) {
+                            AsyncImage(
+                                model = imageUrl,
+                                contentDescription = "图 ${index + 1}",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            // 单张下载按钮（下载中换成进度圈，结果盖个小角标）
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.45f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                when (imageStatus[index]) {
+                                    "下载中" -> CircularProgressIndicator(
+                                        modifier = Modifier.padding(7.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White,
+                                    )
+                                    else -> IconButton(
+                                        onClick = { downloadOne(index, imageUrl) },
+                                        modifier = Modifier.size(30.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Download,
+                                            contentDescription = "下载图 ${index + 1}",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(17.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            imageStatus[index]?.takeIf { it != "下载中" }?.let { status ->
+                                Text(
+                                    text = status,
+                                    fontSize = 10.sp,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(
+                                            if (status == "已保存") Color(0xFF2E7D32) else Color(0xFFB3261E),
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+                    }
+                    // 最后一行不满 3 张时用空占位补齐，weight 才对得齐
+                    repeat(3 - rowImages.size) { Spacer(Modifier.weight(1f)) }
                 }
+                Spacer(Modifier.height(6.dp))
             }
-            Spacer(Modifier.height(4.dp))
             Text(
-                text = "图集作品没有视频，把图片链接复制到浏览器打开即可保存原图",
+                text = "点图片看大图，右上角图标单张下载，保存到相册（Movies 目录）",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -411,7 +484,6 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: (AnimePlayRequest) -> Uni
             Spacer(Modifier.height(6.dp))
             var galleryStatus by remember(media.images) { mutableStateOf<String?>(null) }
             var downloadingImages by remember(media.images) { mutableStateOf(false) }
-            val galleryDownloader = remember { MediaDownloader() }
             Button(
                 onClick = {
                     if (downloadingImages) return@Button
@@ -419,21 +491,18 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: (AnimePlayRequest) -> Uni
                         downloadingImages = true
                         var ok = 0
                         var fail = 0
-                        val base = (media.title ?: "抖音图集")
-                            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                            .take(40)
                         withContext(Dispatchers.IO) {
                             media.images.forEachIndexed { index, imageUrl ->
                                 galleryStatus = "正在下载 ${index + 1}/${media.images.size} 张…"
                                 val target = runCatching {
-                                    VideoDownloadStore(context).prepare(base + "-" + (index + 1) + ".jpg")
+                                    VideoDownloadStore(context).prepare("$baseName-${index + 1}.jpg")
                                 }.getOrNull()
                                 if (target == null) {
                                     fail++
                                     return@forEachIndexed
                                 }
                                 try {
-                                    galleryDownloader.download(imageUrl, emptyMap(), target.open()) { _, _ -> }
+                                    imageDownloader.download(imageUrl, emptyMap(), target.open()) { _, _ -> }
                                     target.finish()
                                     ok++
                                 } catch (e: CancellationException) {
