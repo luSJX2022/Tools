@@ -79,7 +79,7 @@ fun ToolsScreen(
     animeFavoriteCount: Int = 0,
     /** 还没配置教务账号时，课表入口直接说清楚要先去配置。 */
     configured: Boolean = true,
-    /** 被用户在编辑模式（或「设置 → 个性化」）里藏起来的入口 key。 */
+    /** 被用户在首页「编辑」模式里藏起来的入口 key。 */
     hiddenEntries: Set<String> = emptySet(),
     /** 入口排列顺序（AppSettings.toolOrder，空表示默认顺序）。 */
     entryOrder: List<String> = emptyList(),
