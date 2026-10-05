@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261004T235051261Z-23780-fc7abdb7481a",
+  "runId": "20261004T235051261Z-23780-fc7abdb7481a",
+  "runStatus": "inconclusive",
+  "coverage": {
+    "status": "partial",
+    "reasons": [
+      {
+        "code": "baseline_partial",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline capture had enumeration or snapshot errors",
+        "affectsCompletion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline_partial: baseline capture had enumeration or snapshot errors",
+        "affectsCompletion": true
+      }
+    ]
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "6fce4b66dfa4bf65ce53edb943bd9f7a89e5f439",
+  "diffHash": "7139e92a9d4b829c21799cc7f76b59ed127c40c37dd5c6fe449f4f695b085851",
+  "rulesVersion": "unavailable",
+  "sessionHash": "e962151cbe124c0f91610502e08dde0da23fa65880da08965ba6f4f24ade52bd",
+  "reportRef": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c-20261004T235051261Z-23780-fc7abdb7481a.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/jw/qz/QzAppDoAdapter.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/ui/grades/GradesViewModel.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/ui/grades/GradesScreen.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "app/src/main/kotlin/com/qzkt/timetable/ui/tools/ToolsScreen.kt",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-10-04T23:50:51.641Z"
+}

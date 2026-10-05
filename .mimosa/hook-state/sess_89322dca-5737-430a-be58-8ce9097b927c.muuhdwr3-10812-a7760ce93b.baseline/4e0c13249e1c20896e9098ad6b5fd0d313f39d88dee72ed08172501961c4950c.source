@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Grading
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.Card
@@ -112,6 +113,14 @@ fun ToolsScreen(
                         "电影、剧集、动漫，搜索、收藏和在线播放"
                     },
                     onClick = onOpenAnime,
+                )
+            }
+            if ("grades" !in hiddenEntries) {
+                ToolEntry(
+                    icon = Icons.Default.Grading,
+                    title = "成绩",
+                    subtitle = "教务系统成绩和学分查询",
+                    onClick = onOpenGrades,
                 )
             }
             if (hiddenEntries.isNotEmpty()) {

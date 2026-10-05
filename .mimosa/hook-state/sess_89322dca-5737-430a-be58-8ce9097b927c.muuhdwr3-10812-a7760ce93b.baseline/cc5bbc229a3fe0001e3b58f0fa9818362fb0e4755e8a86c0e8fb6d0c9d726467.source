@@ -83,20 +83,6 @@ fun GradesScreen(
                     TextButton(onClick = { viewModel.refresh() }) { Text("重试") }
                 }
 
-                state.grades.isEmpty() -> Column(
-                    modifier = Modifier.fillMaxSize().padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = "还没有查询过成绩",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = { viewModel.refresh() }) { Text("查询成绩") }
-                }
-
                 else -> GradesContent(
                     grades = state.grades,
                     studentName = state.studentName,
