@@ -103,6 +103,43 @@ class OnlineBookContentTest {
     }
 
     @Test
+    fun `kunnu8 模板正文取自 nr1 而不是整个 body`() {
+        // kunnu8/luoxia 模板把 id="nr_body" 挂在 <body> 标签上，
+        // 抓错容器会把「Ctrl+D 收藏本站」「共 7 条评论」整页带进阅读页
+        val html = """
+            <html><body id="nr_body" class="lx">
+              <div id="pagewrap">
+                <header><a href="/">鲲弩小说</a> Ctrl+D 收藏本站</header>
+                <div id="mydiv">关灯 护眼 小 中 大 繁 直达底部</div>
+                <div id="nr1"><p>正文第一段。</p><p>正文第二段。</p></div>
+                <div id="comments">共 7 条评论</div>
+                <div>评论被关闭了！</div>
+              </div>
+            </body></html>
+        """.trimIndent()
+
+        val text = Jsoup.parse(html).kunnuContentElement()
+            .textWithBreaks()
+            .stripSiteJunk()
+
+        assertEquals("正文第一段。\n正文第二段。", text)
+    }
+
+    @Test
+    fun `真把 nr_body 用作正文 div 的站点也能取到`() {
+        val html = """
+            <html><body>
+              <div>页面其他内容。</div>
+              <div id="nr_body"><p>这才是正文。</p></div>
+            </body></html>
+        """.trimIndent()
+
+        val text = Jsoup.parse(html).kunnuContentElement().textWithBreaks().stripSiteJunk()
+
+        assertEquals("这才是正文。", text)
+    }
+
+    @Test
     fun `粘在段落末尾的水印连装饰域名一起抠掉`() {
         // 实测 luoxiadushu.com 的水印形态：正文段落末尾粘着
         // 「落*霞*读*书* 🐱 =- l u o x i a d u s h u . c o m -=」

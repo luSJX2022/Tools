@@ -12,8 +12,8 @@ android {
         applicationId = "com.qzkt.timetable"
         minSdk = 26
         targetSdk = 37
-        versionCode = 38
-        versionName = "1.0.38"
+        versionCode = 39
+        versionName = "1.0.39"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }

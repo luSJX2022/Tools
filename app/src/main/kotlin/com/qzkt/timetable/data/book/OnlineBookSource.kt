@@ -222,6 +222,20 @@ internal fun org.jsoup.nodes.Element.textWithBreaks(): String {
 }
 
 /**
+ * 鲲弩/落霞模板的正文容器。
+ *
+ * 这套模板把 `id="nr_body"` 挂在 `<body>` 标签上（kunnu8.com 和 luoxiadushu.com
+ * 都一样），真正的正文在 `#nr1` 里。直接抓 `#nr_body` 等于抓整页 ——
+ * 页头、「Ctrl+D 收藏本站」、「共 N 条评论」、页脚全进了阅读页。
+ * 有的站若真把 nr_body 用作正文 div，先认 `div#nr_body`，最后才退回 `#nr_body`。
+ */
+internal fun org.jsoup.nodes.Document.kunnuContentElement(): org.jsoup.nodes.Element =
+    selectFirst("#nr1")
+        ?: selectFirst("div#nr_body")
+        ?: selectFirst("#nr_body")
+        ?: error("章节内容缺失（页面可能改版）")
+
+/**
  * 剔除书站模板混进正文的杂行和行内水印。
  *
  * 实测（kunnu8 模板「落霞读书」）正文里会带上：面包屑（首页&gt; 书&gt; 卷&gt; 章）、
@@ -284,10 +298,10 @@ internal fun String.stripSiteJunk(): String {
  *
  * 搜索：`/search/{关键词}`；命中页里 `.search-list-cat a` 是书籍落地页（`/{slug}/`）；
  * 书页的 `div.book-list a` 是全部章节（绝对地址）；
- * 正文在章节页的 `#nr_body`，正文里混着「鲲`弩`小`说 w w w …」广告行，逐行剔除。
+ * 正文在章节页的 `#nr1`（模板把 id="nr_body" 挂在 <body> 标签上，别抓错），
+ * 正文里混着「鲲`弩`小`说 w w w …」广告行，逐行剔除。
  *
  * 分类：世界名著 / 影视原著 / 悬疑推理 / 畅销文学 / 言情穿越 / 编辑精选。
- * 正文在章节页的 `#nr_body`，正文里混着「鲲`弩`小`说 w w w …」广告行，逐行剔除。
  */
 class Kunnu8Source(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -370,7 +384,7 @@ class Kunnu8Source(
             resp.body?.string() ?: error("空响应")
         }
         val doc = Jsoup.parse(body, baseUrl)
-        val element = doc.selectFirst("#nr_body") ?: error("章节内容缺失（页面可能改版）")
+        val element = doc.kunnuContentElement()
         // 先剥掉正文里的 script/style 并反转义实体，再逐行剔除广告
         // （鲲`弩`小`说 w w w … 之类的推广行），最后剔除书站模板杂行
         element.textWithBreaks()
