@@ -65,7 +65,7 @@ data class AppSettings(
 
     companion object {
         /** 工具页全部入口 key 的默认顺序。 */
-        val DEFAULT_TOOL_ORDER: List<String> = listOf("timetable", "book", "resolve", "anime", "grades")
+        val DEFAULT_TOOL_ORDER: List<String> = listOf("academic", "book", "resolve", "anime")
 
         /**
          * 把存的 toolOrder 清洗成可显示顺序：丢掉已下线的 key、

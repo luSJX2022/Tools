@@ -43,6 +43,7 @@ import com.qzkt.timetable.ui.player.PlayerScreen
 import com.qzkt.timetable.ui.player.ResolveScreen
 import com.qzkt.timetable.ui.settings.SettingsScreen
 import com.qzkt.timetable.ui.setup.SetupScreen
+import com.qzkt.timetable.ui.academic.AcademicScreen
 import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
 import com.qzkt.timetable.ui.book.BookshelfScreen
 import com.qzkt.timetable.ui.book.BookViewModel
@@ -69,6 +70,8 @@ private object Routes {
     const val BOOK_READ = "book_read/{bookId}"
     /** 成绩页。 */
     const val GRADES = "grades"
+    /** 教务页：课表 + 成绩聚合入口，底部页签切换。 */
+    const val ACADEMIC = "academic"
     /** 参数是资源站里的番剧 id。 */
     const val ANIME_DETAIL = "anime_detail/{vodId}"
     const val SETTINGS = "settings"
@@ -88,6 +91,7 @@ private val TOOLS_SUB_PAGES = setOf(
     Routes.BOOK_READ,
     Routes.GRADES,
     Routes.ACCOUNT,
+    Routes.ACADEMIC,
 )
 
 private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
@@ -239,10 +243,9 @@ fun QzktApp(
                         themeMode = settings.themeMode,
                         dynamicColor = settings.dynamicColor,
                         onUpdate = viewModel::saveSettings,
-                        onOpenTimetable = { navController.navigate(Routes.TIMETABLE) },
+                        onOpenAcademic = { navController.navigate(Routes.ACADEMIC) },
                         onOpenResolve = { navController.navigate(Routes.RESOLVE) },
                         onOpenBooks = { navController.navigate(Routes.BOOK) },
-                            onOpenGrades = { navController.navigate(Routes.GRADES) },
                         onOpenAnime = { navController.navigate(Routes.ANIME) },
                     )
                 }
@@ -252,6 +255,30 @@ fun QzktApp(
                         viewModel = gradesViewModel,
                         onBack = { navController.popBackStack() },
                         onOpenWebLogin = { navController.navigate(Routes.WEB) },
+                    )
+                }
+
+                composable(Routes.ACADEMIC) {
+                    AcademicScreen(
+                        timetableContent = {
+                            TimetableScreen(
+                                snapshot = snapshot,
+                                settings = settings,
+                                displayWeek = displayWeek,
+                                busy = uiState.busy,
+                                onWeekChange = viewModel::showWeek,
+                                onRefresh = viewModel::refresh,
+                                onSetFirstMonday = viewModel::setFirstMonday,
+                                onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                            )
+                        },
+                        gradesContent = {
+                            GradesScreen(
+                                viewModel = gradesViewModel,
+                                onBack = { navController.popBackStack() },
+                                onOpenWebLogin = { navController.navigate(Routes.WEB) },
+                            )
+                        },
                     )
                 }
 

@@ -14,15 +14,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Grading
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
@@ -77,7 +76,7 @@ private class ToolSpec(
 fun ToolsScreen(
     snapshot: TimetableSnapshot,
     animeFavoriteCount: Int = 0,
-    /** 还没配置教务账号时，课表入口直接说清楚要先去配置。 */
+    /** 还没配置教务账号时，教务入口直接说清楚要先去配置。 */
     configured: Boolean = true,
     /** 被用户在首页「编辑」模式里藏起来的入口 key。 */
     hiddenEntries: Set<String> = emptySet(),
@@ -86,10 +85,9 @@ fun ToolsScreen(
     themeMode: String = "SYSTEM",
     dynamicColor: Boolean = true,
     onUpdate: ((AppSettings) -> AppSettings) -> Unit = {},
-    onOpenTimetable: () -> Unit,
+    onOpenAcademic: () -> Unit = {},
     onOpenResolve: () -> Unit = {},
     onOpenBooks: () -> Unit = {},
-    onOpenGrades: () -> Unit = {},
     onOpenAnime: () -> Unit = {},
 ) {
     val today = remember { LocalDate.now() }
@@ -101,20 +99,20 @@ fun ToolsScreen(
     val specs = remember(snapshot, currentWeek, configured, animeFavoriteCount) {
         listOf(
             ToolSpec(
-                key = "timetable",
-                icon = Icons.Default.CalendarMonth,
-                title = "课表",
+                key = "academic",
+                icon = Icons.Default.School,
+                title = "教务",
                 subtitle = {
                     when {
                         !configured -> "还没配置教务账号，点进去配置"
-                        snapshot.firstMonday.isBlank() -> "还没设置开学日期，点进去补上"
+                        snapshot.firstMonday.isBlank() -> "课表、成绩 · 点进去先设置开学日期"
                         else -> {
                             val weeks = if (snapshot.weekCount > 0) " · 共 ${snapshot.weekCount} 周" else ""
-                            "第 $currentWeek 周$weeks"
+                            "课表 · 第 $currentWeek 周$weeks · 成绩查询"
                         }
                     }
                 },
-                onClick = onOpenTimetable,
+                onClick = onOpenAcademic,
             ),
             ToolSpec(
                 key = "book",
@@ -142,13 +140,6 @@ fun ToolsScreen(
                     }
                 },
                 onClick = onOpenAnime,
-            ),
-            ToolSpec(
-                key = "grades",
-                icon = Icons.Default.Grading,
-                title = "成绩",
-                subtitle = { "教务系统成绩和学分查询" },
-                onClick = onOpenGrades,
             ),
         ).associateBy { it.key }
     }

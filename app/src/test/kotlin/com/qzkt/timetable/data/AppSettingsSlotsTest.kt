@@ -79,8 +79,8 @@ class AppSettingsSlotsTest {
     fun `toolOrder 丢掉下线 key 并补上新增入口`() {
         val saved = listOf("anime", "ghost", "timetable")
         val order = AppSettings.displayToolOrder(saved)
-        // 下线的 ghost 被丢掉，剩下的按存的顺序，新增的 book/resolve/grades 排到末尾
-        assertEquals(listOf("anime", "timetable", "book", "resolve", "grades"), order)
+        // 下线的 ghost 和被教务收编的 timetable 被丢掉，剩下的按存的顺序，新增的 academic/book/resolve 排到末尾
+        assertEquals(listOf("anime", "academic", "book", "resolve"), order)
         // 结果一定是全量 key，不漏不重
         assertEquals(AppSettings.DEFAULT_TOOL_ORDER.toSet(), order.toSet())
     }
