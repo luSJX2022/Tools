@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -68,6 +69,8 @@ fun CourseSelectScreen(
     var discovering by remember { mutableStateOf(hasSession && baseUrl.isNotBlank()) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(false) }
+    /** true = 没找到直达链接、退回主界面，页顶给菜单路径提示。 */
+    var fallback by rememberSaveable { mutableStateOf(false) }
 
     // 选课流程会在网页里一层层点进去：系统返回键先给 WebView 后退，退无可退再出教务页
     BackHandler(enabled = webView?.canGoBack() == true) {
@@ -98,6 +101,8 @@ fun CourseSelectScreen(
             manager.flush()
         }
         targetUrl = found
+        // 没找到直达链接、退回主界面时，给一句菜单路径提示（各校在「选课管理」菜单下）
+        fallback = found == null
         discovering = false
     }
 
@@ -140,11 +145,24 @@ fun CourseSelectScreen(
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator() }
 
-            targetUrl != null -> AndroidView(
+            targetUrl != null -> Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                factory = { ctx ->
+            ) {
+                if (fallback) {
+                    Text(
+                        text = "没找到直达链接 —— 在左边学校菜单里点「选课管理 → 学生选课中心」（选课中心在新窗口打开，会自动接回这里）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -194,7 +212,8 @@ fun CourseSelectScreen(
                     val url = targetUrl
                     if (url != null && view.url != url) view.loadUrl(url)
                 },
-            )
+                )
+            }
         }
     }
 }
@@ -222,20 +241,14 @@ internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
             if (body.isBlank() || body.contains("userAccount")) continue // 被打回登录页
 
             val doc = Jsoup.parse(body, pageUrl)
-            val anchor = doc.select("a[href]").firstOrNull { a ->
-                a.attr("href").contains("xsxk", ignoreCase = true) ||
-                    a.text().replace(" ", "").contains("选课")
-            }
-            val fromAnchor = anchor?.attr("href")?.trim().takeUnless {
-                it.isNullOrEmpty() || it.startsWith("javascript", ignoreCase = true)
-            }
-            val found = fromAnchor
-                ?: JS_URL_REGEX.findAll(body)
-                    .map { it.groupValues[1] }
-                    .firstOrNull { href -> JS_URL_VALID(href) }
-            if (found != null) {
-                // 按浏览器语义解析：相对链接基于页面 URL（含目录），不是基于 /jsxsd 根
-                return pageUrl.toHttpUrlOrNull()?.resolve(found)?.toString()
+            scanForCourseSelectUrl(doc, pageUrl)?.let { return it }
+
+            // 菜单可能放在内嵌页里：把 iframe 的 src 也抓来扫一遍
+            for (frame in doc.select("iframe[src], frame[src]")) {
+                val frameUrl = pageUrl.toHttpUrlOrNull()?.resolve(frame.attr("src"))?.toString() ?: continue
+                val frameBody = fetchWithSession(client, frameUrl, cookie) ?: continue
+                if (frameBody.isBlank() || frameBody.contains("userAccount")) continue
+                scanForCourseSelectUrl(Jsoup.parse(frameBody, frameUrl), frameUrl)?.let { return it }
             }
         }
 
@@ -249,6 +262,25 @@ internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
     } finally {
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
+    }
+    return null
+}
+
+/** 单个页面里的选课入口扫描：`<a>` 优先，扫不到再从整页原文挖带 xsxk 的地址。 */
+private fun scanForCourseSelectUrl(doc: org.jsoup.nodes.Document, pageUrl: String): String? {
+    val anchor = doc.select("a[href]").firstOrNull { a ->
+        a.attr("href").contains("xsxk", ignoreCase = true) ||
+            a.text().replace(" ", "").contains("选课")
+    }
+    val fromAnchor = anchor?.attr("href")?.trim().takeUnless {
+        it.isNullOrEmpty() || it.startsWith("javascript", ignoreCase = true)
+    }
+    val found = fromAnchor
+        ?: JS_URL_REGEX.findAll(doc.body().html()).map { it.groupValues[1] }
+            .firstOrNull { href -> JS_URL_VALID(href) }
+    if (found != null) {
+        // 按浏览器语义解析：相对链接基于页面 URL（含目录），不是基于 /jsxsd 根
+        return pageUrl.toHttpUrlOrNull()?.resolve(found)?.toString()
     }
     return null
 }

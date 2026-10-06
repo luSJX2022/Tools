@@ -119,15 +119,36 @@ class CourseSelectDiscoveryTest {
         assertEquals("$base/xsxk/xsxk_index.html", url)
     }
 
+    @Test
+    fun `菜单放在 iframe 里时抓内嵌页来扫`() {
+        menuHtml = """
+            <html><body>
+              <iframe src="/jsxsd/menu/left.html"></iframe>
+            </body></html>
+        """.trimIndent()
+        iframeHtml = """
+            <html><body><a href="xsxk/xsxkIndex.html">学生选课中心</a></body></html>
+        """.trimIndent()
+
+        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
+
+        // 内嵌页在 /jsxsd/menu/ 下，相对链接按它所在目录解析
+        assertEquals("$base/menu/xsxk/xsxkIndex.html", url)
+    }
+
     // ------------------------------------------------------------------ 假服务端
 
     /** 对 xsxk 目录试探请求的响应内容（默认给个「不像选课」的页面，命中用例再替换）。 */
     private var candidateHtml: String = "<html><body>404 not found</body></html>"
 
+    /** 菜单 iframe（src 带 menu）返回的内容。 */
+    private var iframeHtml: String = "<html><body>空菜单</body></html>"
+
     private fun handle(exchange: HttpExchange) {
         val path = exchange.requestURI.path
         val body = when {
             path.contains("/xsxk/") -> candidateHtml
+            path.contains("menu") -> iframeHtml
             path.contains("framework") -> menuHtml
             else -> ""
         }
