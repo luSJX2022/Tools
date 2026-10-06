@@ -180,7 +180,8 @@ fun QzktApp(
                 modifier = Modifier.weight(1f),
             ) {
                 composable(Routes.SETUP) {
-                    // 配置成功后自己退回上一页（首次是从 课表 → 教务账号 → 这里进来的）。
+                    // 配置成功（抓课表成功）后直接回教务页，中间的账号页一并退掉；
+                    // 教务页不在栈里就退回上一页兜底。
                     // 只认「进来时没配置、后来变成已配置」，免得已配置状态下进错页面被立刻弹走。
                     // rememberSaveable：从「在应用内登录」那张网页页（WEB）返回时，
                     // SETUP 会重新进组合，普通 remember 会丢，导致配置成功后不自动退回。
@@ -189,7 +190,10 @@ fun QzktApp(
                         if (!settings.configured) {
                             wasUnconfigured = true
                         } else if (wasUnconfigured) {
-                            navController.popBackStack()
+                            wasUnconfigured = false
+                            if (!navController.popBackStack(Routes.ACADEMIC, inclusive = false)) {
+                                navController.popBackStack()
+                            }
                         }
                     }
 
@@ -204,6 +208,15 @@ fun QzktApp(
                 }
 
                 composable(Routes.WEB) {
+                    // 用登录会话抓课表成功（会话随之存进设置、成绩查询也能用了）：
+                    // 直接回教务页，课表已经刷好、成绩切个页签就能查。
+                    LaunchedEffect(webImportResult) {
+                        if (webImportResult?.ok == true) {
+                            if (!navController.popBackStack(Routes.ACADEMIC, inclusive = false)) {
+                                navController.popBackStack()
+                            }
+                        }
+                    }
                     WebImportScreen(
                         baseUrl = settings.baseUrl,
                         busy = uiState.busy,
