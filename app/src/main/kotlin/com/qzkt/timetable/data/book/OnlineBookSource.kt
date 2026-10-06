@@ -222,38 +222,59 @@ internal fun org.jsoup.nodes.Element.textWithBreaks(): String {
 }
 
 /**
- * 剔除书站模板混进正文的杂行。
+ * 剔除书站模板混进正文的杂行和行内水印。
  *
  * 实测（kunnu8 模板「落霞读书」）正文里会带上：面包屑（首页&gt; 书&gt; 卷&gt; 章）、
  * 重复的章节标题、「关灯 护眼 小 中 大 繁 直达底部」字号按钮、「上一章/下一章」导航、
- * adsbygoogle 广告和脚本残留。这些特征不可能出现在小说正文里，逐行滤掉；
- * 相邻的完全相同行（站点把章节标题连贴两遍）也只留一份。
+ * adsbygoogle 广告和脚本残留。还有一种粘在段落末尾的水印
+ * 「……缘分。”他说落*霞*读*书* 🐱 =- l u o x i a d u s h u . c o m -=」——
+ * 字符间插了星号/表情/空格，整行过滤抓不到，得先按模板把水印连同后面的
+ * 装饰和域名尾巴从行内抠掉，再逐行滤掉独立杂行；相邻的完全相同行
+ * （站点把章节标题连贴两遍）也只留一份。
  */
 internal fun String.stripSiteJunk(): String {
+    // 「落霞读书」「鲲弩小说」：字符间可能插着 * 、空格、反引号、· 等装饰符，
+    // 水印后面往往还跟着一段非汉字的装饰尾巴（表情 + 隔开的域名）
+    val inlineWatermarks = listOf("落霞读书", "鲲弩小说").map { brand ->
+        Regex(
+            brand.toCharArray().joinToString("[\\s*＊·、`｜|]") { Regex.escape(it.toString()) } +
+                "[\\s*＊·、`｜|]*(?:[^\\u4e00-\\u9fa5\\u201c\\u201d\\u300c\\u300d]{0,60})?",
+        )
+    }
+
     fun String.isSiteJunk(): Boolean {
-        val folded = replace(" ", "")
-        return folded.length < 60 && (
-            folded.contains("落霞读书") ||
-                folded.contains("直达底部") ||
-                folded.startsWith("首页>") ||
-                folded.startsWith("上一章") ||
-                folded.startsWith("下一章") ||
-                folded.startsWith("上一頁") ||
-                folded.startsWith("下一頁") ||
-                folded.contains("adsbygoogle") ||
-                contains("document.") ||
-                contains("window.") ||
-                contains("appendChild") ||
-                contains("function(") ||
-                contains("readyState")
-            )
+        val folded = replace(Regex("\\s"), "").lowercase()
+        // 品牌名和站点域名不受行长限制：正文不可能出现这些词
+        val squashed = folded.replace(Regex("[*＊·、`｜|=\\-]"), "")
+        if (squashed.contains("落霞读书") || squashed.contains("鲲弩小说") ||
+            folded.contains("luoxia") || folded.contains("kunnu") ||
+            folded.contains("www.")
+        ) {
+            return true
+        }
+        if (folded.length >= 60) return false
+        return folded.startsWith("首页>") ||
+            folded.startsWith("上一章") ||
+            folded.startsWith("下一章") ||
+            folded.startsWith("上一頁") ||
+            folded.startsWith("下一頁") ||
+            folded.contains("直达底部") ||
+            folded.contains("adsbygoogle") ||
+            contains("document.") ||
+            contains("window.") ||
+            contains("appendChild") ||
+            contains("function(") ||
+            contains("readyState")
     }
 
     val kept = mutableListOf<String>()
     for (line in split("\n").map { it.trim() }) {
-        if (line.isBlank() || line.isSiteJunk()) continue
-        if (kept.isNotEmpty() && kept.last() == line) continue // 相邻重复行（站点重复贴的标题）
-        kept += line
+        var clean = line
+        inlineWatermarks.forEach { clean = clean.replace(it, "") }
+        clean = clean.trim()
+        if (clean.isBlank() || clean.isSiteJunk()) continue
+        if (kept.isNotEmpty() && kept.last() == clean) continue // 相邻重复行（站点重复贴的标题）
+        kept += clean
     }
     return kept.joinToString("\n").trim()
 }

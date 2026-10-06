@@ -101,4 +101,45 @@ class OnlineBookContentTest {
         assertTrue(out.contains("·"))
         assertFalse(out.contains("&"))
     }
+
+    @Test
+    fun `粘在段落末尾的水印连装饰域名一起抠掉`() {
+        // 实测 luoxiadushu.com 的水印形态：正文段落末尾粘着
+        // 「落*霞*读*书* 🐱 =- l u o x i a d u s h u . c o m -=」
+        val html = """
+            <div id="nr_body">
+              <p>大伙儿能在这荒山相逢，也是几世修不来的缘分。”他说落*霞*读*书* 🐱 =- l u o x i a d u s h u . c o m -=</p>
+              <p>梁文靖面皮一热，抗声道：“爹总说我武艺不好。”</p>
+              <p>落*霞*读*书*</p>
+            </div>
+        """.trimIndent()
+
+        val out = extract(html)
+
+        assertTrue(out.contains("缘分。”他说"))
+        assertTrue(out.contains("爹总说我武艺不好。"))
+        assertFalse(out.contains("落霞读书"))
+        assertFalse(out.contains("luoxia"))
+        assertFalse(out.contains("🐱"))
+        assertFalse(out.contains("www"))
+        // 独立成行的整行水印被删掉后不该留下空行
+        assertEquals(2, out.split("\n").size)
+    }
+
+    @Test
+    fun `鲲弩小说反引号水印同样被抠掉`() {
+        val html = """
+            <div id="nr_body">
+              <p>他说完这句就走了。鲲`弩`小`说 w w w . k u n n u 8 . c o m</p>
+              <p>正文不受影响。</p>
+            </div>
+        """.trimIndent()
+
+        val out = extract(html)
+
+        assertTrue(out.contains("他说完这句就走了。"))
+        assertTrue(out.contains("正文不受影响。"))
+        assertFalse(out.contains("鲲弩小说"))
+        assertFalse(out.contains("kunnu"))
+    }
 }
