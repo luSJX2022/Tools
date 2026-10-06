@@ -63,18 +63,22 @@ internal class QzJsxsdDirect(
     )
 
     /**
-     * 拿着**已有的会话 cookie** 直接拉成绩页（`/jsxsd/kscj/cjcx_query`）。
+     * 拿着**已有的会话 cookie** 直接拉成绩页。
      *
      * 有的学校登录页有反自动化校验，账号密码这条路走不通（成绩页以前因此直接废掉）；
      * 但用户在应用内登录一次之后会话 cookie 就在手上，和课表一样能直接查。
      *
-     * 先试 GET（大部分学校直接返回整张成绩表），不行再 POST 一次空查询
-     * （查询条件全空 = 全部学期，这是表单版学校的取全部方式）。
+     * 地址候选：
+     * - `/xxwcqk/xxwcqkOnkcxz.do`：新版教务一体化的「学习完成情况」页，
+     *   海都学院浏览器实测就这个地址出成绩（未登录时开它停在登录页）；
+     * - `/kscj/cjcx_query`：老版成绩查询，别的学校兜底；
+     * - 最后给 cjcx_query 补一次 POST 空查询（查询条件全空 = 全部学期）。
+     *
+     * 每个地址 GET 都试两遍：学校服务器偶尔抽风返回空页，第二遍往往就好了。
      */
     suspend fun fetchGrades(base: String, cookie: String?): GradesOutcome = withContext(Dispatchers.IO) {
         val client = clientFactory()
         val normalizedBase = runCatching { resolveBase(base) }.getOrElse { throw JwException("地址不对：$base") }
-        val url = "$normalizedBase/kscj/cjcx_query"
         var sawLoginPage = false
 
         fun handle(html: String): List<GradeInfo>? {
@@ -87,13 +91,18 @@ internal class QzJsxsdDirect(
         }
 
         try {
-            val direct = runCatching { get(client, url, cookie) }.getOrNull()
-            if (direct != null) {
-                handle(direct)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
+            for (path in listOf("/xxwcqk/xxwcqkOnkcxz.do", "/kscj/cjcx_query")) {
+                val url = normalizedBase + path
+                repeat(2) {
+                    val html = runCatching { get(client, url, cookie) }.getOrNull() ?: return@repeat
+                    handle(html)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
+                    // 被打回登录页说明会话没登进去 / 已过期，重试也没用，直接换下一个地址
+                    if (html.isLoginPage()) return@repeat
+                }
             }
 
             val queried = runCatching {
-                post(client, url, cookie, form = mapOf("kksj" to "", "kcxz" to "", "kcmc" to "", "xsfs" to "1"))
+                post(client, "$normalizedBase/kscj/cjcx_query", cookie, form = mapOf("kksj" to "", "kcxz" to "", "kcmc" to "", "xsfs" to "1"))
             }.getOrNull()
             if (queried != null) {
                 handle(queried)?.let { return@withContext GradesOutcome(it, loggedIn = true) }

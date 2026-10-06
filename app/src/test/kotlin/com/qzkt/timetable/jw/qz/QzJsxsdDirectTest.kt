@@ -187,11 +187,33 @@ class QzJsxsdDirectTest {
 
         assertEquals(2, outcome.grades.size)
         assertTrue(outcome.loggedIn)
-        // GET 和 POST 都打到 cjcx_query
+        // 空表 GET 会试两遍，再加补的 POST，cjcx_query 一共 3 次
         assertEquals(
-            2,
+            3,
             requestedPaths.count { it.endsWith("cjcx_query") },
         )
+    }
+
+    @Test
+    fun `成绩优先走新版学习完成情况页`() = runBlocking {
+        val outcome = QzJsxsdDirect().fetchGrades(base, validCookie)
+
+        assertTrue("应当解析出成绩", outcome.grades.isNotEmpty())
+        // 第一个请求就是 xxwcqkOnkcxz.do，而且不需要再打老地址
+        assertTrue(requestedPaths.first().endsWith("xxwcqkOnkcxz.do"))
+        assertEquals(0, requestedPaths.count { it.endsWith("cjcx_query") })
+    }
+
+    @Test
+    fun `成绩地址抽风时会连试两遍再换下一个`() = runBlocking {
+        gradesGetEmpty = true
+        val outcome = QzJsxsdDirect().fetchGrades(base, validCookie)
+
+        // 新地址空表试两遍，再退回 cjcx_query 的 GET（也试两遍）+ POST
+        assertEquals(2, requestedPaths.count { it.endsWith("xxwcqkOnkcxz.do") })
+        assertEquals(3, requestedPaths.count { it.endsWith("cjcx_query") })
+        assertEquals(2, outcome.grades.size)
+        assertTrue(outcome.loggedIn)
     }
 
     @Test
@@ -225,7 +247,10 @@ class QzJsxsdDirectTest {
             brokenFirst -> loginPage
             path.endsWith("xskb_list.do") -> timetablePage
             path.endsWith("xskbcx_cxXsKb.html") -> timetablePage
-            // 成绩页：GET 可能是空表（表单版学校），POST 空查询才出全部成绩
+            // 新版「学习完成情况」页：海都学院浏览器实测的成绩地址
+            path.endsWith("xxwcqkOnkcxz.do") ->
+                if (gradesGetEmpty) gradesEmptyPage else gradesPage
+            // 老成绩页：GET 可能是空表（表单版学校），POST 空查询才出全部成绩
             path.endsWith("cjcx_query") && exchange.requestMethod == "GET" ->
                 if (gradesGetEmpty) gradesEmptyPage else gradesPage
             path.endsWith("cjcx_query") -> gradesPage
