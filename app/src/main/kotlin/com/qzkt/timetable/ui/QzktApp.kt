@@ -342,6 +342,7 @@ fun QzktApp(
                         animeSession = animeSession,
                         onEpisodeSwitched = { animeViewModel.switchEpisode(it) },
                         autoPlayNext = settings.autoPlayNext,
+                        onBack = { navController.popBackStack() },
                     )
                 }
 

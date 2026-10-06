@@ -11,6 +11,7 @@ import android.view.WindowManager
 import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,6 +57,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -111,6 +117,8 @@ fun PlayerScreen(
     onEpisodeSwitched: (AnimePlayRequest) -> Unit = {},
     /** 一集放完是否自动接着放下一集（设置 → 个性化里开关）。 */
     autoPlayNext: Boolean = false,
+    /** 返回封面页（影视详情 / 解析结果）；简介顶部的封面行点下去走这里。 */
+    onBack: () -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -534,6 +542,52 @@ fun PlayerScreen(
             // 解析 / 选集跳过来时的作品简介（保存在 savedDescription，不随 playRequest 消费而消失）
             savedDescription?.takeIf { it.isNotBlank() }?.let { description ->
                 Spacer(Modifier.height(12.dp))
+
+                // 简介顶部：封面 + 片名，点一下返回封面页（影视详情 / 解析结果）
+                val coverUrl = animeSession?.pic
+                val headerName = animeSession?.name?.takeIf { it.isNotBlank() } ?: currentName
+                if (!coverUrl.isNullOrBlank() || !headerName.isNullOrBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onBack)
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!coverUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = coverUrl,
+                                contentDescription = "封面",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(46.dp)
+                                    .aspectRatio(3f / 4f)
+                                    .clip(RoundedCornerShape(8.dp)),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = headerName ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "点这里返回封面",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = "返回封面",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
                 var expanded by remember { mutableStateOf(false) }
                 Text(
                     text = "简介",

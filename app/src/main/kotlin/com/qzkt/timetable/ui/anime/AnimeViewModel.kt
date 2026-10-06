@@ -222,6 +222,7 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
             episodes = detail.episodes,
             currentIndex = episodeIndex,
             description = detail.content.ifBlank { null },
+            pic = detail.pic,
         )
         _animeSession.value = request
         pendingPlay = request

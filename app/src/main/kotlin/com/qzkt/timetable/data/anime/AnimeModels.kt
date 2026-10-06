@@ -74,4 +74,6 @@ data class AnimePlayRequest(
     val currentIndex: Int = 0,
     /** 作品简介（B站 desc / 抖音文案）；链接解析时带过来显示在播放页底部。 */
     val description: String? = null,
+    /** 封面图地址（影视海报 / 解析封面）；简介顶部的封面行用。 */
+    val pic: String? = null,
 )

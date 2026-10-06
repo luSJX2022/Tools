@@ -697,6 +697,7 @@ private fun ResolvedCard(media: ResolvedMedia, onPlay: (AnimePlayRequest) -> Uni
                             url = media.url,
                             title = media.title ?: "",
                             description = media.description,
+                            pic = media.cover,
                         ),
                     )
                 },
