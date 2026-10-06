@@ -12,20 +12,29 @@ android {
         applicationId = "com.qzkt.timetable"
         minSdk = 26
         targetSdk = 37
-        versionCode = 35
-        versionName = "1.0.35"
+        versionCode = 36
+        versionName = "1.0.36"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 压缩 + 资源收缩：发行包从未压缩的 ~28MB 降到几 MB。
+            // 用 debug 签名是为了和已安装包签名一致，能直接覆盖升级不丢数据。
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    androidResources {
+        // 只保留中英文，砍掉依赖库里几十种语言的翻译资源
+        localeFilters += listOf("zh", "en")
     }
 
     compileOptions {
