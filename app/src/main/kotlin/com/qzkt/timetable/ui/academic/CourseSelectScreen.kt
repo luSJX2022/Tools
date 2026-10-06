@@ -112,8 +112,10 @@ fun CourseSelectScreen(
         }
         discovering = true
         val found = withContext(Dispatchers.IO) { discoverCourseSelectUrl(baseUrl, sessionCookie) }
-        targetUrl = found
-        // 没找到直达链接、退回主界面时，给一句菜单路径提示（各校在「选课管理」菜单下）
+        // 选课中心是主框架页（xsMainV.htmlx）里的内部页签，地址栏不会变 ——
+        // 找不到更深的直达链接就主框架本身就是入口，在里面点菜单进选课
+        targetUrl = found ?: "$baseUrl/framework/xsMainV.htmlx"
+        // 没找到直达链接时，给一句菜单路径提示（各校在「选课管理」菜单下）
         fallback = found == null
         discovering = false
     }
@@ -244,9 +246,18 @@ fun CourseSelectScreen(
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 pageLoading = true
-                                // 第一次从主界面菜单点进选课中心时把地址学下来，下次一键直达
+                                // 第一次从主框架点进选课中心时把地址学下来，下次一键直达
                                 val target = url
-                                if (!target.isNullOrBlank() && target.contains("xsxk", ignoreCase = true)) {
+                                if (!target.isNullOrBlank() && isCourseSelectPage(target)) {
+                                    onLearnCourseSelectUrl(target)
+                                }
+                            }
+
+                            // 选课中心若是框架页里的 iframe，主页面不会发生导航，
+                            // 资源加载回调里也能看到它的地址
+                            override fun onLoadResource(view: WebView?, url: String?) {
+                                val target = url
+                                if (!target.isNullOrBlank() && isCourseSelectPage(target)) {
                                     onLearnCourseSelectUrl(target)
                                 }
                             }
@@ -328,7 +339,8 @@ private fun scanForCourseSelectUrl(doc: org.jsoup.nodes.Document, pageUrl: Strin
     val found = fromAnchor
         ?: JS_URL_REGEX.findAll(doc.body().html()).map { it.groupValues[1] }
             .firstOrNull { href -> JS_URL_VALID(href) }
-    if (found != null) {
+    // 菜单模板里可能挂着 xsxk 命名的脚本/样式资源，那不是页面入口
+    if (found != null && isCourseSelectPage(found)) {
         // 按浏览器语义解析：相对链接基于页面 URL（含目录），不是基于 /jsxsd 根
         return pageUrl.toHttpUrlOrNull()?.resolve(found)?.toString()
     }
@@ -367,3 +379,9 @@ private val JS_URL_REGEX = Regex("[\"']([^\"']*xsxk[^\"']*)[\"']", RegexOption.I
 private fun JS_URL_VALID(href: String): Boolean =
     !href.startsWith("javascript", true) &&
         (href.contains(".html", true) || href.contains(".do", true) || href.contains(".jsp", true))
+
+/** 像选课页（而不是脚本/样式资源）的地址：带 xsxk 且是页面类型。 */
+private fun isCourseSelectPage(url: String): Boolean =
+    url.contains("xsxk", ignoreCase = true) &&
+        !url.substringBefore('?').endsWith(".js", ignoreCase = true) &&
+        !url.substringBefore('?').endsWith(".css", ignoreCase = true)

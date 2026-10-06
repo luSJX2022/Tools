@@ -120,6 +120,22 @@ class CourseSelectDiscoveryTest {
     }
 
     @Test
+    fun `xsxk 命名的脚本资源不算入口`() {
+        // 页面里挂着 xsxk 命名的 JS/模板不算页面链接，要继续往下找
+        menuHtml = """
+            <html><body>
+              <a href="/jsxsd/xsxk/js/xsxkMenu.js">选课脚本</a>
+              <a href="/jsxsd/framework/xsMainV.htmlx">首页</a>
+            </body></html>
+        """.trimIndent()
+        candidateHtml = "<html><body><div>选课中心</div></body></html>"
+
+        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
+
+        assertEquals("$base/xsxk/xsxk_index.html", url)
+    }
+
+    @Test
     fun `菜单放在 iframe 里时抓内嵌页来扫`() {
         menuHtml = """
             <html><body>
