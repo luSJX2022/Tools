@@ -349,6 +349,8 @@ fun QzktApp(
                     SettingsScreen(
                         settings = settings,
                         onUpdate = viewModel::saveSettings,
+                        onExportBackup = viewModel::exportBackup,
+                        onImportBackup = viewModel::importBackup,
                     )
                 }
 

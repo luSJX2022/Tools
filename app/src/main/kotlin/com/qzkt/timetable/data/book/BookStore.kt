@@ -194,6 +194,27 @@ class BookStore(private val context: Context) {
         }
     }
 
+    /** 备份恢复：整体替换书架、书源选择和阅读偏好（进度在 books 里一并回来）。 */
+    suspend fun restore(
+        sourceKey: String?,
+        readerFontSize: Int?,
+        readerNight: Boolean?,
+        books: List<Book>,
+    ) {
+        context.bookDataStore.edit { prefs ->
+            val existing = decode(prefs[booksKey])
+            prefs[booksKey] = json.encodeToString(
+                BookStoreData.serializer(),
+                existing.copy(
+                    sourceKey = sourceKey ?: existing.sourceKey,
+                    books = books,
+                    readerFontSize = readerFontSize?.coerceIn(14, 30) ?: existing.readerFontSize,
+                    readerNight = readerNight ?: existing.readerNight,
+                ),
+            )
+        }
+    }
+
     private fun decode(raw: String?): BookStoreData =
         raw?.let { runCatching { json.decodeFromString(BookStoreData.serializer(), it) }.getOrNull() }
             ?: BookStoreData()

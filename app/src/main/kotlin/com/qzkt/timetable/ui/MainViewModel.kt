@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.qzkt.timetable.AppContainer
 import com.qzkt.timetable.data.AppSettings
 import com.qzkt.timetable.data.TimetableSnapshot
+import com.qzkt.timetable.data.backup.BackupData
+import com.qzkt.timetable.data.backup.BackupManager
+import com.qzkt.timetable.data.backup.BackupManager.Companion.json
 import com.qzkt.timetable.jw.deriveFirstMonday
 import com.qzkt.timetable.jw.qz.QzJsxsdDirect
 import com.qzkt.timetable.jw.qz.QzWebParser
@@ -15,8 +18,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import java.time.LocalDate
 
 /** 一次操作的即时状态，UI 直接拿它渲染进度条和提示条。 */
@@ -154,6 +159,49 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             SyncScheduler.cancel(container.appContext)
         }
         container.classReminders.rescheduleUpcoming()
+    }
+
+    /** 导出备份（设置 + 书架 + 追番）到用户选的文件。 */
+    fun exportBackup(uri: android.net.Uri) = viewModelScope.launch {
+        runCatching {
+            val payload = json.encodeToString(container.backupManager.export())
+            withContext(Dispatchers.IO) {
+                container.appContext.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(payload.toByteArray())
+                } ?: error("无法写入所选文件")
+            }
+        }.onSuccess {
+            _uiState.value = _uiState.value.copy(message = "备份已导出", messageIsError = false)
+        }.onFailure { e ->
+            _uiState.value = _uiState.value.copy(message = "导出失败：${e.message}", messageIsError = true)
+        }
+    }
+
+    /** 从备份文件恢复（覆盖本地设置、书架和追番数据）。 */
+    fun importBackup(uri: android.net.Uri) = viewModelScope.launch {
+        runCatching {
+            val text = withContext(Dispatchers.IO) {
+                container.appContext.contentResolver.openInputStream(uri)?.use { input ->
+                    input.readBytes().decodeToString()
+                } ?: error("无法读取所选文件")
+            }
+            val data = json.decodeFromString<BackupData>(text)
+            container.backupManager.restore(data)
+            // 恢复进来的设置可能改了同步开关 / 作息提醒，后台任务跟着对齐
+            val restored = container.settingsStore.settings.first()
+            _settings.value = restored
+            if (restored.configured && restored.syncEnabled) {
+                SyncScheduler.schedule(container.appContext, restored.syncIntervalMinutes)
+            } else {
+                SyncScheduler.cancel(container.appContext)
+            }
+            container.classReminders.rescheduleUpcoming()
+            "已恢复 ${data.books.size} 本图书、${data.animeFavorites.size} 部收藏"
+        }.onSuccess { message ->
+            _uiState.value = _uiState.value.copy(message = message, messageIsError = false)
+        }.onFailure { e ->
+            _uiState.value = _uiState.value.copy(message = "恢复失败：${e.message}", messageIsError = true)
+        }
     }
 
     fun clearTimetable() = viewModelScope.launch {

@@ -128,6 +128,27 @@ class AnimeStore(private val context: Context) {
         }
     }
 
+    /** 备份恢复：整体替换收藏、进度、影视源和搜索历史。 */
+    suspend fun restore(
+        sourceKey: String?,
+        favorites: List<AnimeFavorite>,
+        progress: Map<String, AnimeProgress>,
+        searchHistory: List<String>,
+    ) {
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(
+                    sourceKey = sourceKey ?: existing.sourceKey,
+                    favorites = favorites,
+                    progress = progress,
+                    searchHistory = searchHistory.take(MAX_SEARCH_HISTORY),
+                ),
+            )
+        }
+    }
+
     private fun decode(raw: String?): AnimeStoreData =
         raw?.let { runCatching { json.decodeFromString(AnimeStoreData.serializer(), it) }.getOrNull() }
             ?: AnimeStoreData()

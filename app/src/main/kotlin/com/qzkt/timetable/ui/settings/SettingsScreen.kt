@@ -2,6 +2,8 @@ package com.qzkt.timetable.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,7 +59,16 @@ import java.io.File
 fun SettingsScreen(
     settings: AppSettings,
     onUpdate: ((AppSettings) -> AppSettings) -> Unit,
+    onExportBackup: (android.net.Uri) -> Unit = {},
+    onImportBackup: (android.net.Uri) -> Unit = {},
 ) {
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let(onExportBackup) }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(onImportBackup) }
+
     Scaffold(topBar = { TopAppBar(title = { Text("设置") }) }) { padding ->
         Column(
             modifier = Modifier
@@ -71,6 +82,12 @@ fun SettingsScreen(
             // 影视设置（资源站 / 收藏）在影视页右上角齿轮，图书设置（书源 / 阅读偏好 / 书架数据）在图书页右上角齿轮
             PersonalizationSection(settings = settings, onUpdate = onUpdate)
             CacheCard()
+            BackupCard(
+                onExport = {
+                    exportLauncher.launch("Tools-备份-" + java.time.LocalDate.now() + ".json")
+                },
+                onImport = { importLauncher.launch(arrayOf("application/json", "text/*")) },
+            )
             AboutCard()
             Spacer(Modifier.height(24.dp))
         }
@@ -196,6 +213,28 @@ private fun appFootprint(context: android.content.Context): Long {
     return total
 }
 
+/** 数据备份：设置 + 书架 + 追番导出一个 JSON 文件，换机 / 重装后导入恢复。 */
+@Composable
+private fun BackupCard(onExport: () -> Unit, onImport: () -> Unit) {
+    SectionCard("数据备份") {
+        StorageRow(
+            title = "导出数据",
+            desc = "设置、书架、追番收藏和进度存成文件",
+            size = "",
+            action = "导出",
+            onAction = onExport,
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        StorageRow(
+            title = "导入数据",
+            desc = "从备份文件恢复（覆盖现有数据）",
+            size = "",
+            action = "导入",
+            onAction = onImport,
+        )
+    }
+}
+
 /** 检查更新在界面上的几种状态。 */private sealed interface UpdateUiState {
     data object Idle : UpdateUiState
     data object Checking : UpdateUiState
@@ -313,7 +352,7 @@ private fun StorageRow(title: String, desc: String, size: String, action: String
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontSize = 14.sp)
             Text(
-                text = "$desc，当前 $size",
+                text = if (size.isBlank()) desc else "$desc，当前 $size",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

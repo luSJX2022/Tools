@@ -6,6 +6,7 @@ import com.qzkt.timetable.data.SettingsStore
 import com.qzkt.timetable.data.TimetableRepository
 import com.qzkt.timetable.data.TimetableStore
 import com.qzkt.timetable.data.anime.AnimeStore
+import com.qzkt.timetable.data.backup.BackupManager
 import com.qzkt.timetable.data.book.BookStore
 import com.qzkt.timetable.jw.JwAdapter
 import com.qzkt.timetable.jw.qz.SmartQzAdapter
@@ -29,6 +30,9 @@ class AppContainer(context: Context) {
     val animeStore = AnimeStore(appContext)
 
     val bookStore = BookStore(appContext)
+
+    /** 设置 + 书架 + 追番的备份恢复（设置页「数据备份」用）。 */
+    val backupManager = BackupManager(settingsStore, bookStore, animeStore)
 
     val repository = TimetableRepository(
         TimetableStore(File(appContext.filesDir, "timetable")),

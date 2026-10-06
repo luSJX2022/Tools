@@ -17,10 +17,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -60,6 +63,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -386,6 +390,14 @@ private fun FavoritesGrid(
         }
         return
     }
+    // 继续观看：看到一半的收藏按最近观看排序，点一下直接回到详情页（会话记得看到哪集）
+    val continueWatching = favorites
+        .mapNotNull { fav ->
+            progress[AnimeViewModel.progressKey(fav.source, fav.id)]?.let { fav to it }
+        }
+        .sortedByDescending { it.second.updatedAt }
+        .take(12)
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -393,6 +405,27 @@ private fun FavoritesGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
+        if (continueWatching.isNotEmpty()) {
+            item(key = "continue_title", span = { GridItemSpan(3) }) {
+                Text(
+                    "继续观看",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            item(key = "continue_row", span = { GridItemSpan(3) }) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(continueWatching, key = { it.first.source + it.first.id }) { (fav, prog) ->
+                        ContinueCard(
+                            name = fav.name,
+                            pic = fav.pic,
+                            progressLabel = prog.episodeLabel,
+                            onClick = { onOpenDetail(fav.id) },
+                        )
+                    }
+                }
+            }
+        }
         items(favorites, key = { it.source + it.id }) { fav ->
             // 有观看进度时把「看到第几集」并进角标，跟更新信息一起显示
             val seen = progress[AnimeViewModel.progressKey(fav.source, fav.id)]
@@ -405,6 +438,53 @@ private fun FavoritesGrid(
                 onClick = { onOpenDetail(fav.id) },
             )
         }
+    }
+}
+
+/** 继续观看的小卡片：固定宽度的封面 + 片名 + 看到哪集。 */
+@Composable
+private fun ContinueCard(name: String, pic: String, progressLabel: String, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(106.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(3f / 4f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            if (pic.isNotEmpty()) {
+                AsyncImage(
+                    model = pic,
+                    contentDescription = name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            if (progressLabel.isNotBlank()) {
+                Text(
+                    text = "看到 $progressLabel",
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = name,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
