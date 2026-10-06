@@ -57,6 +57,13 @@ data class AppSettings(
      */
     val sessionCookie: String = "",
     val sessionSavedAt: Long = 0,
+    /**
+     * 学到的「选课中心」地址。
+     *
+     * 各校选课入口藏在 JS 动态菜单里挖不到，第一次从教务主界面菜单点进选课中心时，
+     * 选课页会把这个地址记下来，以后直接一键直达。
+     */
+    val courseSelectUrl: String = "",
 ) {
     fun slotOf(period: Int): TimeSlot? = slots.firstOrNull { it.period == period }
 

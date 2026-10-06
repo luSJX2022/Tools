@@ -279,6 +279,8 @@ fun QzktApp(
                                 baseUrl = settings.baseUrl,
                                 sessionCookie = settings.sessionCookie,
                                 hasSession = settings.hasSession,
+                                learnedUrl = settings.courseSelectUrl,
+                                onLearnCourseSelectUrl = viewModel::saveCourseSelectUrl,
                                 onOpenWebLogin = { navController.navigate(Routes.WEB) },
                             )
                         },

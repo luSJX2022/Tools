@@ -63,10 +63,13 @@ fun CourseSelectScreen(
     baseUrl: String,
     sessionCookie: String,
     hasSession: Boolean,
+    /** 学到的选课中心地址（第一次从主界面菜单点进去时记下的），非空直接用。 */
+    learnedUrl: String = "",
+    onLearnCourseSelectUrl: (String) -> Unit = {},
     onOpenWebLogin: () -> Unit = {},
 ) {
     var targetUrl by rememberSaveable { mutableStateOf<String?>(null) }
-    var discovering by remember { mutableStateOf(hasSession && baseUrl.isNotBlank()) }
+    var discovering by remember { mutableStateOf(hasSession && baseUrl.isNotBlank() && learnedUrl.isBlank()) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(false) }
     /** true = 没找到直达链接、退回主界面，页顶给菜单路径提示。 */
@@ -77,14 +80,12 @@ fun CourseSelectScreen(
         webView?.goBack()
     }
 
-    LaunchedEffect(baseUrl, sessionCookie, hasSession) {
+    LaunchedEffect(baseUrl, sessionCookie, hasSession, learnedUrl) {
         if (!hasSession || baseUrl.isBlank()) {
             discovering = false
             return@LaunchedEffect
         }
-        discovering = true
-        val found = withContext(Dispatchers.IO) { discoverCourseSelectUrl(baseUrl, sessionCookie) }
-        // 会话 cookie 同步进 WebView（选课页面靠它免登录）；cookie 里一行一个 name=value
+        // 同步会话 cookie 到 WebView（选课页面靠它免登录）；cookie 里一行一个 name=value
         runCatching {
             val manager = CookieManager.getInstance()
             manager.setAcceptCookie(true)
@@ -100,6 +101,15 @@ fun CourseSelectScreen(
             }
             manager.flush()
         }
+        if (learnedUrl.isNotBlank()) {
+            // 已经从主界面点过一次选课中心：记住的地址直接用
+            targetUrl = learnedUrl
+            fallback = false
+            discovering = false
+            return@LaunchedEffect
+        }
+        discovering = true
+        val found = withContext(Dispatchers.IO) { discoverCourseSelectUrl(baseUrl, sessionCookie) }
         targetUrl = found
         // 没找到直达链接、退回主界面时，给一句菜单路径提示（各校在「选课管理」菜单下）
         fallback = found == null
@@ -166,6 +176,10 @@ fun CourseSelectScreen(
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // 和学校电脑浏览器同一套 UA：页面按桌面版出（配合整页缩放渲染）
+                        settings.userAgentString =
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                         // 学校的页面是桌面布局：整页缩放显示 + 允许双指缩放，不然排版全乱
                         settings.useWideViewPort = true
                         settings.loadWithOverviewMode = true
@@ -199,6 +213,11 @@ fun CourseSelectScreen(
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 pageLoading = true
+                                // 第一次从主界面菜单点进选课中心时把地址学下来，下次一键直达
+                                val target = url
+                                if (!target.isNullOrBlank() && target.contains("xsxk", ignoreCase = true)) {
+                                    onLearnCourseSelectUrl(target)
+                                }
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {

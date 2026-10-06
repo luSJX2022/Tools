@@ -161,6 +161,14 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         container.classReminders.rescheduleUpcoming()
     }
 
+    /** 记住「选课中心」地址（选课页第一次从主界面菜单点进去时学到的）。 */
+    fun saveCourseSelectUrl(url: String) {
+        if (url.isBlank() || url == _settings.value.courseSelectUrl) return
+        viewModelScope.launch {
+            container.settingsStore.update { it.copy(courseSelectUrl = url) }
+        }
+    }
+
     /** 导出备份（设置 + 书架 + 追番）到用户选的文件。 */
     fun exportBackup(uri: android.net.Uri) = viewModelScope.launch {
         runCatching {
