@@ -6,6 +6,7 @@ import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,6 +68,11 @@ fun CourseSelectScreen(
     var discovering by remember { mutableStateOf(hasSession && baseUrl.isNotBlank()) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(false) }
+
+    // 选课流程会在网页里一层层点进去：系统返回键先给 WebView 后退，退无可退再出教务页
+    BackHandler(enabled = webView?.canGoBack() == true) {
+        webView?.goBack()
+    }
 
     LaunchedEffect(baseUrl, sessionCookie, hasSession) {
         if (!hasSession || baseUrl.isBlank()) {
@@ -142,7 +148,36 @@ fun CourseSelectScreen(
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        webChromeClient = WebChromeClient()
+                        // 学校的页面是桌面布局：整页缩放显示 + 允许双指缩放，不然排版全乱
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+                        // 选课中心常以「新窗口」打开：新窗口落地后把地址接回当前 WebView 继续
+                        settings.setSupportMultipleWindows(true)
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onCreateWindow(
+                                view: WebView?,
+                                isDialog: Boolean,
+                                isUserGesture: Boolean,
+                                resultMsg: android.os.Message?,
+                            ): Boolean {
+                                val main = view ?: return false
+                                val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                                val temp = WebView(main.context)
+                                temp.webViewClient = object : WebViewClient() {
+                                    override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
+                                        if (!url.isNullOrBlank() && url != "about:blank") {
+                                            main.loadUrl(url)
+                                            v.destroy()
+                                        }
+                                    }
+                                }
+                                transport.setWebView(temp)
+                                resultMsg.sendToTarget()
+                                return true
+                            }
+                        }
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 pageLoading = true
@@ -165,11 +200,15 @@ fun CourseSelectScreen(
 }
 
 /**
- * 从教务主界面的菜单里找「选课」入口。
+ * 从教务主界面的菜单里找「选课」入口，按可靠性递进三步：
  *
- * 各校菜单都长在主界面（xsMainV.htmlx 这一代）里：优先找 href 带 `xsxk`
- * 的链接（强智选课路径的通用特征），找不到再找文字带「选课」的；
- * 相对地址解析成绝对地址，找不到返回 null（调用方退回主界面）。
+ * 1. 主界面 `<a>` 扫描：href 带 `xsxk`（强智选课路径的通用特征）或文字带「选课」；
+ * 2. 整页原文挖 `xsxk` 地址 —— 新一代主界面的菜单是 JS 动态生成的，
+ *    `<a>` 扫不到，但选课地址往往就写在页面脚本配置里；
+ * 3. 常见选课地址逐个试探（[COURSE_SELECT_CANDIDATES]）：带会话请求，
+ *    返回非登录页且正文像选课的就算命中。
+ *
+ * 相对地址按浏览器语义解析（基于页面 URL）；全找不到返回 null（调用方退回主界面）。
  */
 internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
     val client = OkHttpClient.Builder()
@@ -179,33 +218,33 @@ internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
     try {
         for (path in QzJsxsdAdapter.HOME_PATHS) {
             val pageUrl = baseUrl + path
-            val body = runCatching {
-                client.newCall(
-                    Request.Builder().url(pageUrl)
-                        .header("User-Agent", QzHttp.USER_AGENT)
-                        .header("Cookie", cookie)
-                        .get()
-                        .build(),
-                ).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        null
-                    } else {
-                        QzHttp.decodeBody(resp.peekBody(Long.MAX_VALUE).bytes(), resp.header("Content-Type"))
-                    }
-                }
-            }.getOrNull() ?: continue
+            val body = fetchWithSession(client, pageUrl, cookie) ?: continue
             if (body.isBlank() || body.contains("userAccount")) continue // 被打回登录页
 
             val doc = Jsoup.parse(body, pageUrl)
             val anchor = doc.select("a[href]").firstOrNull { a ->
                 a.attr("href").contains("xsxk", ignoreCase = true) ||
                     a.text().replace(" ", "").contains("选课")
-            } ?: continue
-            val href = anchor.attr("href").trim()
-            if (href.isEmpty() || href.startsWith("javascript", ignoreCase = true)) continue
-            // 按浏览器语义解析：相对链接基于页面 URL（含目录），不是基于 /jsxsd 根
-            val absolute = pageUrl.toHttpUrlOrNull()?.resolve(href)?.toString() ?: continue
-            return absolute
+            }
+            val fromAnchor = anchor?.attr("href")?.trim().takeUnless {
+                it.isNullOrEmpty() || it.startsWith("javascript", ignoreCase = true)
+            }
+            val found = fromAnchor
+                ?: JS_URL_REGEX.findAll(body)
+                    .map { it.groupValues[1] }
+                    .firstOrNull { href -> JS_URL_VALID(href) }
+            if (found != null) {
+                // 按浏览器语义解析：相对链接基于页面 URL（含目录），不是基于 /jsxsd 根
+                return pageUrl.toHttpUrlOrNull()?.resolve(found)?.toString()
+            }
+        }
+
+        for (path in COURSE_SELECT_CANDIDATES) {
+            val body = fetchWithSession(client, baseUrl + path, cookie) ?: continue
+            if (body.isBlank() || body.contains("userAccount")) continue
+            if (body.contains("选课") || body.contains("xsxk", ignoreCase = true)) {
+                return baseUrl + path
+            }
         }
     } finally {
         client.dispatcher.executorService.shutdown()
@@ -213,3 +252,36 @@ internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
     }
     return null
 }
+
+private fun fetchWithSession(client: OkHttpClient, url: String, cookie: String): String? =
+    runCatching {
+        client.newCall(
+            Request.Builder().url(url)
+                .header("User-Agent", QzHttp.USER_AGENT)
+                .header("Cookie", cookie)
+                .get()
+                .build(),
+        ).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                null
+            } else {
+                QzHttp.decodeBody(resp.peekBody(Long.MAX_VALUE).bytes(), resp.header("Content-Type"))
+            }
+        }
+    }.getOrNull()
+
+/** 强智各代选课页的常见地址，配合会话逐个试探（试错的代价只是一次请求）。 */
+internal val COURSE_SELECT_CANDIDATES = listOf(
+    "/xsxk/xsxk_index.html",
+    "/xsxk/xsxkIndex.html",
+    "/xsxk/index.html",
+    "/xsxkEntry.do",
+    "/xsxk/xsxk.html",
+)
+
+/** 页面脚本里挖地址：引号包起来的、带 xsxk 的字符串（JS 动态菜单的配置一般长这样）。 */
+private val JS_URL_REGEX = Regex("[\"']([^\"']*xsxk[^\"']*)[\"']", RegexOption.IGNORE_CASE)
+
+private fun JS_URL_VALID(href: String): Boolean =
+    !href.startsWith("javascript", true) &&
+        (href.contains(".html", true) || href.contains(".do", true) || href.contains(".jsp", true))

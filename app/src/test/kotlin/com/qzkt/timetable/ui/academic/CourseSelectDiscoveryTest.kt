@@ -93,11 +93,44 @@ class CourseSelectDiscoveryTest {
         assertTrue(url == null || !url.startsWith("javascript"))
     }
 
+    @Test
+    fun `动态菜单写在页面脚本里也能挖出选课地址`() {
+        // 新一代主界面的菜单是 JS 生成的，<a> 扫不到，但地址就写在页面脚本配置里
+        menuHtml = """
+            <html><body><script>
+              var menu = [{name: "选课中心", url: "/jsxsd/xsxk/xsxkIndex.html?xnxqdm=2026-2027-1"}];
+            </script></body></html>
+        """.trimIndent()
+
+        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
+
+        assertEquals("$base/xsxk/xsxkIndex.html?xnxqdm=2026-2027-1", url)
+    }
+
+    @Test
+    fun `菜单找不到时试探常见选课地址`() {
+        menuHtml = """
+            <html><body><a href="/jsxsd/framework/xsMainV.htmlx">首页</a></body></html>
+        """.trimIndent()
+        candidateHtml = "<html><body><div>选课中心 欢迎使用</div></body></html>"
+
+        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
+
+        assertEquals("$base/xsxk/xsxk_index.html", url)
+    }
+
     // ------------------------------------------------------------------ 假服务端
+
+    /** 对 xsxk 目录试探请求的响应内容（默认给个「不像选课」的页面，命中用例再替换）。 */
+    private var candidateHtml: String = "<html><body>404 not found</body></html>"
 
     private fun handle(exchange: HttpExchange) {
         val path = exchange.requestURI.path
-        val body = if (path.contains("framework")) menuHtml else ""
+        val body = when {
+            path.contains("/xsxk/") -> candidateHtml
+            path.contains("framework") -> menuHtml
+            else -> ""
+        }
         val bytes = body.toByteArray(Charset.forName("UTF-8"))
         exchange.responseHeaders.add("Content-Type", "text/html;charset=UTF-8")
         exchange.sendResponseHeaders(200, bytes.size.toLong())
