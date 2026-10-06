@@ -104,6 +104,15 @@ class QzJsxsdAdapter(
         override val rawLog: List<RawExchange> get() = log.toList()
 
         fun login(password: String) {
+            // 老一代登录：sess 接口取校验串再混淆提交。新一代学校在这步只会拿到
+            // 「请先登录系统」，所以失败后自动换新一代登录（QzJsxsdAutoLogin）再试一次 ——
+            // 账号过期后不用再手动去应用内登录。
+            val legacyFailure = runCatching { loginLegacy(password) }.exceptionOrNull()
+            if (legacyFailure == null) return
+            loginNewGen(password, legacyFailure)
+        }
+
+        private fun loginLegacy(password: String) {
             val sessionKey = fetchSessionKey()
             val encoded = QzJsxsdLogin.encode(username, password, sessionKey)
                 ?: throw JwException("登录参数计算失败：学校返回的校验串格式不对（${sessionKey.take(40)}）")
@@ -122,17 +131,28 @@ class QzJsxsdAdapter(
 
             // 登录成功就不会再看到登录表单了
             if (body.contains("userAccount") || body.contains("loginForm")) {
-                throw JwException(
-                    "登录失败：${extractLoginMessage(body)}" +
-                        "（学校这次没有读到程序提交的表单内容，可能它的登录页有反自动化校验；" +
-                        "如果是这样，请改用「在应用内登录课表」）",
-                )
+                throw JwException("登录失败：${extractLoginMessage(body)}（用账号密码没登进去，请核对密码）")
             }
 
             studentName = Jsoup.parse(body).select("span,div,a")
                 .firstOrNull { it.text().contains("同学") || it.text().contains("欢迎") }
                 ?.text()
                 ?.take(40)
+        }
+
+        /** 新一代登录页（教务一体化）：encoded = base64(账号)%%%base64(密码)，见 [QzJsxsdAutoLogin]。 */
+        private fun loginNewGen(password: String, legacyCause: Throwable) {
+            val ok = runCatching {
+                QzJsxsdAutoLogin.login(client, base, username, password)
+            }.getOrNull()
+            if (ok == null) {
+                // 两代登录都没过：新一代多半是密码错，老一代的原因（网关拦截等）附在后面
+                throw JwException(
+                    "自动登录失败：请核对账号密码（密码在教务账号页可改），或改用「在应用内登录」。" +
+                        "\n第一次尝试的原因：${legacyCause.message}",
+                ).also { it.gateBlocked = legacyCause is JwException && legacyCause.gateBlocked }
+            }
+            // 登录态已经在 client 的 CookieJar 里，后续 loadTerm/loadWholeTerm 直接就是登录状态
         }
 
         /** ① 拿 scode/sxh。 */

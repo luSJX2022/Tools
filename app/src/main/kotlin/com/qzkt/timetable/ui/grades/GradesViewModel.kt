@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.qzkt.timetable.AppContainer
 import com.qzkt.timetable.jw.GradeInfo
 import com.qzkt.timetable.jw.JwConfig
-import com.qzkt.timetable.jw.qz.SmartQzAdapter
+import com.qzkt.timetable.jw.qz.QzHttp
+import com.qzkt.timetable.jw.qz.QzJsxsdAdapter
+import com.qzkt.timetable.jw.qz.QzJsxsdAutoLogin
 import com.qzkt.timetable.jw.qz.QzJsxsdDirect
+import com.qzkt.timetable.jw.qz.SmartQzAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,6 +66,33 @@ class GradesViewModel(private val container: AppContainer) : ViewModel() {
                 // 会话还在但解析不出成绩（排版不同）也留给密码路兜底；
                 // 只有「被打回登录页」才记成过期，密码路也失败时用来决定提示语
                 sessionExpired = outcome != null && !outcome.loggedIn
+            }
+
+            // 会话过期就用账号密码自动登录换新会话（新一代强智登录纯 HTTP 能过，见 QzJsxsdAutoLogin），
+            // 成功后把会话续进设置，下次查询直接走会话这条路，不用再手动「应用内登录」
+            val autoCookie = if (settings.username.isNotBlank() && settings.password.isNotBlank()) {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val base = QzJsxsdAdapter.resolveBase(settings.baseUrl)
+                        QzJsxsdAutoLogin.login(QzHttp.defaultClient(), base, settings.username, settings.password)
+                    }
+                }.getOrNull()
+            } else {
+                null
+            }
+            if (autoCookie != null) {
+                val outcome = runCatching {
+                    withContext(Dispatchers.IO) { QzJsxsdDirect().fetchGrades(settings.baseUrl, autoCookie) }
+                }.getOrNull()
+                if (outcome?.grades?.isNotEmpty() == true) {
+                    withContext(Dispatchers.IO) {
+                        container.settingsStore.update {
+                            it.copy(sessionCookie = autoCookie, sessionSavedAt = System.currentTimeMillis())
+                        }
+                    }
+                    _state.value = GradesUiState(grades = outcome.grades)
+                    return@launch
+                }
             }
 
             try {
