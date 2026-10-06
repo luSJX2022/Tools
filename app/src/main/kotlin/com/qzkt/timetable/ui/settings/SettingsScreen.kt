@@ -127,55 +127,48 @@ private fun PersonalizationSection(settings: AppSettings, onUpdate: ((AppSetting
     }
 }
 
-/** 存储与缓存：播放缓存、图片缓存，各自显示占用并可以清理。 */
+/** 存储与缓存：软件占用一目了然，播放/图片缓存合并成一项统一清理。 */
 @Composable
 private fun CacheCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var playbackSize by remember { mutableStateOf<Long?>(null) }
-    var imageSize by remember { mutableStateOf<Long?>(null) }
+    var appSize by remember { mutableStateOf<Long?>(null) }
+    var cacheSize by remember { mutableStateOf<Long?>(null) }
 
     fun refreshSizes() {
         scope.launch {
             val result = withContext(Dispatchers.IO) {
-                val playback = dirSize(File(context.cacheDir, "media_cache"))
                 val image = runCatching {
                     context.imageLoader.diskCache?.directory?.let { dirSize(File(it.toString())) }
                 }.getOrNull() ?: 0L
-                playback to image
+                (dirSize(File(context.cacheDir, "media_cache")) + image) to appFootprint(context)
             }
-            playbackSize = result.first
-            imageSize = result.second
+            cacheSize = result.first
+            appSize = result.second
         }
     }
     LaunchedEffect(Unit) { refreshSizes() }
 
     SectionCard("存储与缓存") {
         StorageRow(
-            title = "播放缓存",
-            desc = "看过的视频分片，上限 256MB",
-            size = formatBytes(playbackSize),
-            action = "清理",
-            onAction = {
-                scope.launch {
-                    withContext(Dispatchers.IO) {
-                        val cache = PlaybackService.playbackCache(context)
-                        cache.keys.forEach { key -> cache.removeResource(key) }
-                    }
-                    refreshSizes()
-                }
-            },
+            title = "软件占用",
+            desc = "应用本体和数据（不含缓存）",
+            size = formatBytes(appSize),
+            action = "",
+            onAction = {},
         )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         StorageRow(
-            title = "图片缓存",
-            desc = "番剧封面等图片",
-            size = formatBytes(imageSize),
+            title = "缓存",
+            desc = "播放分片 + 图片",
+            size = formatBytes(cacheSize),
             action = "清理",
             onAction = {
                 scope.launch {
                     withContext(Dispatchers.IO) {
                         runCatching {
+                            val playback = PlaybackService.playbackCache(context)
+                            playback.keys.forEach { key -> playback.removeResource(key) }
                             context.imageLoader.diskCache?.clear()
                             context.imageLoader.memoryCache?.clear()
                         }
@@ -185,6 +178,22 @@ private fun CacheCard() {
             },
         )
     }
+}
+
+/** 应用占用：APK 本体 + 数据目录（不含缓存，缓存单列在上面）。 */
+private fun appFootprint(context: android.content.Context): Long {
+    var total = 0L
+    runCatching {
+        context.dataDir?.listFiles()?.forEach { child ->
+            if (child.name != "cache") total += dirSize(child)
+        }
+    }
+    runCatching {
+        val ai = context.applicationInfo
+        total += File(ai.sourceDir).length()
+        ai.splitSourceDirs?.forEach { total += File(it).length() }
+    }
+    return total
 }
 
 /** 检查更新在界面上的几种状态。 */private sealed interface UpdateUiState {

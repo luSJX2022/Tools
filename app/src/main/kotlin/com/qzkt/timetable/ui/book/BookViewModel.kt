@@ -9,9 +9,6 @@ import com.qzkt.timetable.data.book.BookSource
 import com.qzkt.timetable.data.book.BookSources
 import com.qzkt.timetable.data.book.BookStore
 import com.qzkt.timetable.data.book.CategorizedBookSource
-import com.qzkt.timetable.data.book.NlcCatalog
-import com.qzkt.timetable.data.book.NlcRecord
-import com.qzkt.timetable.data.book.NlcSearchPage
 import com.qzkt.timetable.data.book.OnlineBook
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,21 +27,6 @@ data class StoreCategoryState(
     /** 翻页时 true：新页追加到已有列表后面。 */
     val append: Boolean = false,
 )
-
-/** 国图检索页面的状态。 */
-data class NlcUiState(
-    val loading: Boolean = false,
-    val error: String? = null,
-    val total: Int = 0,
-    val page: Int = 0,
-    val records: List<NlcRecord> = emptyList(),
-    /** 会话地址前缀，翻页用。 */
-    val sessionUrl: String? = null,
-) {
-    val pageCount: Int get() = if (total <= 0) 1 else (total + NlcSearchPage.PAGE_SIZE - 1) / NlcSearchPage.PAGE_SIZE
-    val hasPrev: Boolean get() = page > 1
-    val hasNext: Boolean get() = page in 1 until pageCount
-}
 
 class BookViewModel(private val store: BookStore) : ViewModel() {
 
@@ -84,10 +66,6 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
 
     private val _searchError = MutableStateFlow<String?>(null)
     val searchError: StateFlow<String?> = _searchError
-
-    /** 国图检索状态。 */
-    private val _nlc = MutableStateFlow(NlcUiState())
-    val nlc: StateFlow<NlcUiState> = _nlc
 
     init {
         viewModelScope.launch {
@@ -129,48 +107,6 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
 
     fun addBook(name: String, uri: String) {
         viewModelScope.launch { store.addBook(name, uri) }
-    }
-
-    /** 国图检索（第一页）。 */
-    fun searchNlc(keyword: String) {
-        val query = keyword.trim()
-        if (query.isEmpty() || _nlc.value.loading) return
-        viewModelScope.launch {
-            _nlc.value = NlcUiState(loading = true)
-            runCatching { NlcCatalog.search(query) }
-                .onSuccess { page ->
-                    _nlc.value = NlcUiState(
-                        total = page.total,
-                        page = page.page,
-                        records = page.records,
-                        sessionUrl = page.sessionUrl,
-                    )
-                }
-                .onFailure { e -> _nlc.value = NlcUiState(error = e.message ?: "检索失败") }
-        }
-    }
-
-    /** 国图翻页：delta = ±1。 */
-    fun nlcTurnPage(delta: Int) {
-        val state = _nlc.value
-        val session = state.sessionUrl ?: return
-        if (state.loading) return
-        val target = state.page + delta
-        if (target !in 1..state.pageCount) return
-        val jump = (target - 1) * NlcSearchPage.PAGE_SIZE + 1
-        viewModelScope.launch {
-            _nlc.value = state.copy(loading = true, error = null)
-            runCatching { NlcCatalog.gotoPage(session, jump, target) }
-                .onSuccess { page ->
-                    _nlc.value = NlcUiState(
-                        total = page.total,
-                        page = page.page,
-                        records = page.records,
-                        sessionUrl = page.sessionUrl ?: session,
-                    )
-                }
-                .onFailure { e -> _nlc.value = state.copy(loading = false, error = e.message ?: "翻页失败") }
-        }
     }
 
     fun removeBook(id: String) {
