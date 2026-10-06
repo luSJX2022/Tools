@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -161,14 +163,43 @@ fun CourseSelectScreen(
                     .padding(padding),
             ) {
                 if (fallback) {
+                    var manualUrl by remember { mutableStateOf("") }
                     Text(
-                        text = "没找到直达链接 —— 在左边学校菜单里点「选课管理 → 学生选课中心」（选课中心在新窗口打开，会自动接回这里）",
+                        text = "没找到直达链接，两种方式任选：" +
+                            "① 在左边学校菜单里点「选课管理 → 学生选课中心」（自动记住，下次直达）；" +
+                            "② 把电脑浏览器里选课中心的网址粘贴到下面保存。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = manualUrl,
+                            onValueChange = { manualUrl = it },
+                            placeholder = { Text("粘贴选课中心的网址", style = MaterialTheme.typography.bodySmall) },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = {
+                                val url = manualUrl.trim()
+                                if (url.isNotBlank()) {
+                                    onLearnCourseSelectUrl(url)
+                                    targetUrl = url
+                                    fallback = false
+                                }
+                            },
+                        ) { Text("保存并打开") }
+                    }
                 }
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
