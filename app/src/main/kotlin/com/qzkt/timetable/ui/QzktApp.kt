@@ -81,19 +81,6 @@ private object Routes {
     const val ACCOUNT = "account"
 }
 
-/** 从「工具」页进去的页面：停在这些页时底部「工具」页签保持选中。 */
-private val TOOLS_SUB_PAGES = setOf(
-    Routes.TIMETABLE,
-    Routes.PLAYER,
-    Routes.RESOLVE,
-    Routes.ANIME,
-    Routes.BOOK,
-    Routes.BOOK_READ,
-    Routes.GRADES,
-    Routes.ACCOUNT,
-    Routes.ACADEMIC,
-)
-
 private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
 
 // 底部页签只剩「工具」和「设置」：课表、播放器变成了工具页里的两个入口。
@@ -137,23 +124,17 @@ fun QzktApp(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    // 底部页签一直显示：以前没配置时是「向导优先」的全屏流程，现在首次启动也直接进主页。
-    // 阅读页例外：那里底部要留给「上一章 / 目录 / 下一章」，App 的页签不跟它抢地方。
-    val showBottomBar = currentRoute != Routes.DEBUG &&
-        currentRoute != Routes.SETUP && currentRoute != Routes.WEB &&
-        currentRoute != Routes.BOOK_READ &&
-        !(currentRoute == Routes.PLAYER && playerFullscreen)
+    // 底部页签只在两个顶级页（工具 / 设置）显示：教务、影视、链接解析、图书
+    // 及其详情、播放、账号等子页一律隐藏，把屏幕留给内容本身。
+    val showBottomBar = currentRoute == Routes.TOOLS || currentRoute == Routes.SETTINGS
 
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar {
                     TABS.forEach { tab ->
-                        // 课表 / 播放器 / 它们的子页现在是从「工具」页进去的，
-                        // 停在这些页时「工具」页签保持选中，
-                        // 否则底部会出现「哪个页签都没选中」的怪状态
-                        val selected = backStackEntry?.destination?.hierarchy?.any { it.route == tab.route } == true ||
-                            (tab.route == Routes.TOOLS && currentRoute in TOOLS_SUB_PAGES)
+                        // 页签只在顶级页显示，选中即当前路由本身
+                        val selected = currentRoute == tab.route
                         NavigationBarItem(
                             selected = selected,
                             onClick = {
