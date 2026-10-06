@@ -44,6 +44,7 @@ import com.qzkt.timetable.ui.player.ResolveScreen
 import com.qzkt.timetable.ui.settings.SettingsScreen
 import com.qzkt.timetable.ui.setup.SetupScreen
 import com.qzkt.timetable.ui.academic.AcademicScreen
+import com.qzkt.timetable.ui.academic.CourseSelectScreen
 import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
 import com.qzkt.timetable.ui.book.BookshelfScreen
 import com.qzkt.timetable.ui.book.BookViewModel
@@ -270,6 +271,14 @@ fun QzktApp(
                             GradesScreen(
                                 viewModel = gradesViewModel,
                                 onBack = { navController.popBackStack() },
+                                onOpenWebLogin = { navController.navigate(Routes.WEB) },
+                            )
+                        },
+                        courseSelectContent = {
+                            CourseSelectScreen(
+                                baseUrl = settings.baseUrl,
+                                sessionCookie = settings.sessionCookie,
+                                hasSession = settings.hasSession,
                                 onOpenWebLogin = { navController.navigate(Routes.WEB) },
                             )
                         },

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Grading
+import androidx.compose.material.icons.filled.HowToReg
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -19,15 +20,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 
 /**
- * 教务页：课表和成绩的聚合入口，底部「课表 / 成绩」页签切换。
+ * 教务页：课表、成绩、选课的聚合入口，底部页签切换。
  *
- * 两个子页面各自带 Scaffold 和状态逻辑，由外部以槽位传入；
+ * 三个子页面各自带 Scaffold 和状态逻辑，由外部以槽位传入；
  * 这里用 SaveableStateHolder 保活，切页签不丢课表的周次选择等状态。
  */
 @Composable
 fun AcademicScreen(
     timetableContent: @Composable () -> Unit,
     gradesContent: @Composable () -> Unit,
+    courseSelectContent: @Composable () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(0) }
     val stateHolder = rememberSaveableStateHolder()
@@ -36,7 +38,8 @@ fun AcademicScreen(
         Box(modifier = Modifier.weight(1f)) {
             when (tab) {
                 0 -> stateHolder.SaveableStateProvider("academic_timetable") { timetableContent() }
-                else -> stateHolder.SaveableStateProvider("academic_grades") { gradesContent() }
+                1 -> stateHolder.SaveableStateProvider("academic_grades") { gradesContent() }
+                else -> stateHolder.SaveableStateProvider("academic_course_select") { courseSelectContent() }
             }
         }
         NavigationBar {
@@ -51,6 +54,12 @@ fun AcademicScreen(
                 onClick = { tab = 1 },
                 icon = { Icon(Icons.Default.Grading, contentDescription = null) },
                 label = { Text("成绩") },
+            )
+            NavigationBarItem(
+                selected = tab == 2,
+                onClick = { tab = 2 },
+                icon = { Icon(Icons.Default.HowToReg, contentDescription = null) },
+                label = { Text("选课") },
             )
         }
     }
