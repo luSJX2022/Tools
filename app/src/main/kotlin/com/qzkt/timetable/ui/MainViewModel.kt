@@ -11,6 +11,7 @@ import com.qzkt.timetable.data.backup.BackupManager
 import com.qzkt.timetable.data.backup.BackupManager.Companion.json
 import com.qzkt.timetable.data.xsxk.RoundsOutcome
 import com.qzkt.timetable.data.xsxk.XsxkRound
+import com.qzkt.timetable.data.xsxk.COURSE_SELECT_CANDIDATES
 import com.qzkt.timetable.data.xsxk.discoverCourseSelectUrls
 import com.qzkt.timetable.data.xsxk.fetchRounds
 import com.qzkt.timetable.jw.deriveFirstMonday
@@ -208,9 +209,18 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         }
         var cookie = settings.sessionCookie
 
+        // 候选入口：记住的 → 带学期参数的常见地址（选课首页经常要学期才出轮次表）→ 菜单挖到的 → 裸常见地址
+        val term = runCatching { container.repository.snapshot.value.xnxqh }.getOrNull().orEmpty()
         val candidates = buildList {
             if (settings.courseSelectUrl.isNotBlank()) add(settings.courseSelectUrl)
+            if (term.isNotBlank()) {
+                COURSE_SELECT_CANDIDATES.forEach { path ->
+                    val joiner = if (path.contains("?")) "&" else "?"
+                    add(base + path + joiner + "xnxqdm=" + term)
+                }
+            }
             addAll(withContext(Dispatchers.IO) { discoverCourseSelectUrls(base, cookie) })
+            COURSE_SELECT_CANDIDATES.forEach { add(base + it) }
         }.distinct()
 
         suspend fun tryFetch(url: String): RoundsOutcome =
