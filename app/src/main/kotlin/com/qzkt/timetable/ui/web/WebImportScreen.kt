@@ -29,10 +29,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -124,22 +129,20 @@ fun WebImportScreen(
         if (view != null && view.canGoBack()) view.goBack() else onBack()
     }
 
+    // 页面地址到达主框架 = 已登录：顶栏直接给状态，用户不用猜
+    val loggedIn = currentUrl.contains("framework", ignoreCase = true) ||
+        currentUrl.contains("xsMainV", ignoreCase = true)
+    var showAddressDialog by remember { mutableStateOf(false) }
+
+    BackHandler {
+        val view = webView
+        if (view != null && view.canGoBack()) view.goBack() else onBack()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text(pageTitle.ifBlank { "网页导入" }, fontSize = 15.sp, maxLines = 1)
-                        if (currentUrl.isNotBlank()) {
-                            Text(
-                                text = currentUrl,
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                },
+                title = { Text("应用内登录", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = {
                         val view = webView
@@ -148,7 +151,84 @@ fun WebImportScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
+                actions = {
+                    Row(
+                        modifier = Modifier.padding(end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (loggedIn) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            },
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (loggedIn) "已登录" else "未登录",
+                            fontSize = 12.sp,
+                            color = if (loggedIn) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    IconButton(onClick = { showAddressDialog = true }) {
+                        Icon(Icons.Default.Edit, contentDescription = "更换教务地址")
+                    }
+                },
             )
+        },
+        bottomBar = {
+            // 主推这条路：手机屏幕上看那个桌面版菜单太费劲，直接拿当前登录状态去请求课表页。
+            // 固定在底部，滚到哪里都能点。
+            val loadedUrl = activeUrl
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Button(
+                    onClick = {
+                        val base = loadedUrl ?: currentUrl.ifBlank { addressInput }
+                        onDirectFetch(base, CookieManager.getInstance().getCookie(base))
+                    },
+                    enabled = !busy && !capturing && (loadedUrl != null || currentUrl.isNotBlank()),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("用当前登录状态直接抓课表", fontWeight = FontWeight.Medium)
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { webView?.reload() },
+                        enabled = loadedUrl != null && !capturing,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("重新加载")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val view = webView ?: return@OutlinedButton
+                            capturing = true
+                            pageError = null
+                            view.evaluateJavascript(CAPTURE_SCRIPT, null)
+                        },
+                        enabled = loadedUrl != null && !capturing && !busy,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("抓取当前页面")
+                    }
+                }
+            }
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -160,16 +240,10 @@ fun WebImportScreen(
             }
 
             Text(
-                text = "① 先在下面登录教务系统 —— 能看到主界面就是登录成功了\n" +
-                    "② 再点最下面的「用当前登录状态直接抓课表」（不用自己找菜单）",
+                text = "在页面里登录教务账号 —— 看到主界面就是登录成功了，点下方「用当前登录状态直接抓课表」",
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-            )
-
-            AddressRow(
-                value = addressInput,
-                onValueChange = { addressInput = it },
-                onOpen = { activeUrl = normalizeWebUrl(addressInput) },
             )
 
             pageError?.let { message ->
@@ -205,7 +279,7 @@ fun WebImportScreen(
                 if (loadedUrl == null) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            text = "上面填一下学校地址再点「打开」。\n" +
+                            text = "点右上角 ✏️ 填一下学校地址再打开。\n" +
                                 "填站点首页即可，例如 http://jwgl.xxx.edu.cn（程序会自动去掉 /app.do 这类接口后缀）。",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(24.dp),
@@ -373,45 +447,6 @@ fun WebImportScreen(
                 }
             }
 
-            // 主推这条路：手机屏幕上看那个桌面版菜单太费劲，直接拿当前登录状态去请求课表页。
-            // 放在最上面是因为它是"登录之后的第一步"，按钮顺序要跟操作顺序一致。
-            Button(
-                onClick = {
-                    val base = loadedUrl ?: currentUrl.ifBlank { addressInput }
-                    onDirectFetch(base, CookieManager.getInstance().getCookie(base))
-                },
-                enabled = !busy && !capturing && (loadedUrl != null || currentUrl.isNotBlank()),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-            ) {
-                Text("用当前登录状态直接抓课表（推荐）", fontWeight = FontWeight.Medium)
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(
-                    onClick = { webView?.reload() },
-                    enabled = loadedUrl != null && !capturing,
-                ) {
-                    Text("重新加载")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        val view = webView ?: return@OutlinedButton
-                        capturing = true
-                        pageError = null
-                        view.evaluateJavascript(CAPTURE_SCRIPT, null)
-                    },
-                    enabled = loadedUrl != null && !capturing && !busy,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("抓取当前页面")
-                }
-            }
-
             DiagnosticsPanel(
                 expanded = showDiagnostics,
                 onToggle = { showDiagnostics = !showDiagnostics },
@@ -430,6 +465,28 @@ fun WebImportScreen(
         val view = webView ?: return@LaunchedEffect
         val target = activeUrl ?: return@LaunchedEffect
         if (view.url != target) view.loadUrl(target)
+    }
+
+    if (showAddressDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddressDialog = false },
+            title = { Text("教务系统地址") },
+            text = {
+                OutlinedTextField(
+                    value = addressInput,
+                    onValueChange = { addressInput = it },
+                    singleLine = true,
+                    placeholder = { Text("例如 https://jw.xxx.edu.cn/jsxsd") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    activeUrl = normalizeWebUrl(addressInput)
+                    showAddressDialog = false
+                }) { Text("打开") }
+            },
+            dismissButton = { TextButton(onClick = { showAddressDialog = false }) { Text("取消") } },
+        )
     }
 
     // 抓取是靠 JS 回调回来的；万一页面太大、脚本被拦或回调丢了，不能一直转圈
@@ -573,26 +630,6 @@ private val CAPTURE_SCRIPT = """
 """.trimIndent()
 
 // ------------------------------------------------------------------ 界面块
-
-@Composable
-private fun AddressRow(value: String, onValueChange: (String) -> Unit, onOpen: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text("学校地址") },
-            placeholder = { Text("http://jwgl.xxx.edu.cn") },
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.weight(1f),
-        )
-        Button(onClick = onOpen, enabled = value.isNotBlank()) { Text("打开") }
-    }
-}
 
 @Composable
 private fun BlankPageCard(url: String, onOpenInBrowser: () -> Unit, onReload: () -> Unit) {
