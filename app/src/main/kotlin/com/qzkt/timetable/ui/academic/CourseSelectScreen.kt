@@ -126,6 +126,24 @@ fun CourseSelectScreen(
                             Spacer(Modifier.height(20.dp))
                             ManualEntryRow(onSave = onSaveEntryUrl)
                         }
+                        // 入口页面内容摘要：发截图给开发就能对着真实页面写解析
+                        if (state.entrySnippet.isNotBlank()) {
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = "入口页面内容（前 600 字）：",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = state.entrySnippet,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                            )
+                        }
                     }
                 }
 

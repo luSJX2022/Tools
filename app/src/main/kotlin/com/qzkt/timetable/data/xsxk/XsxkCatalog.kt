@@ -24,6 +24,8 @@ data class RoundsOutcome(
     val loggedIn: Boolean,
     /** false = 页面不是选课轮次表（入口地址不对 / 结构变了）。 */
     val pageKnown: Boolean,
+    /** 页面内容摘要（前 600 字）：结构没认出来时给诊断用。 */
+    val pageSnippet: String = "",
 )
 
 /**
@@ -57,7 +59,12 @@ fun fetchRounds(client: OkHttpClient, entryUrl: String, cookie: String): RoundsO
             val rounds = parseRounds(body, entryUrl)
             val known = rounds.isNotEmpty() ||
                 body.contains("选课名称") || body.contains("未查询到数据")
-            RoundsOutcome(rounds, loggedIn = true, pageKnown = known)
+            RoundsOutcome(
+                rounds = rounds,
+                loggedIn = true,
+                pageKnown = known,
+                pageSnippet = body.replace(Regex("\\s+"), " ").take(600),
+            )
         }
     }
 }

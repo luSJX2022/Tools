@@ -58,6 +58,8 @@ data class CourseRoundsUiState(
     /** true = 没找到选课入口网址，界面给手动粘贴的地方。 */
     val needsEntryUrl: Boolean = false,
     val rounds: List<XsxkRound> = emptyList(),
+    /** 入口页面内容摘要：结构没认出来时显示，方便对照排查。 */
+    val entrySnippet: String = "",
 )
 
 class MainViewModel(private val container: AppContainer) : ViewModel() {
@@ -260,6 +262,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             !outcome.pageKnown -> CourseRoundsUiState(
                 error = "选课页面结构没认出来（入口地址可能不对），可以手动粘贴正确的网址",
                 needsEntryUrl = true,
+                entrySnippet = outcome.pageSnippet,
             )
             else -> CourseRoundsUiState(rounds = outcome.rounds)
         }
