@@ -113,8 +113,9 @@ internal fun parseRounds(html: String, pageUrl: String): List<XsxkRound> {
     }
 }
 
-/** 强智各代选课页的常见地址（兜底候选；真伪由调用方拉取后按 pageKnown 验证）。 */
+/** 强智选课页的常见地址（海都学院实测选课流程列表就是 /jsxsd/xsxk/xklc_list，放首位）。 */
 internal val COURSE_SELECT_CANDIDATES = listOf(
+    "/xsxk/xklc_list",
     "/xsxk/xsxk_index.html",
     "/xsxk/xsxkIndex.html",
     "/xsxk/index.html",

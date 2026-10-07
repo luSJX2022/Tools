@@ -88,6 +88,43 @@ class XsxkCatalogTest {
         assertTrue(parseRounds(html, "$base/xsxk/xsxkIndex.html").isEmpty())
     }
 
+    @Test
+    fun `真实选课页样本：轮次未开放时表头可识别且轮次为空`() {
+        // 从 jw.hdxy.edu.cn/jsxsd/xsxk/xklc_list 实际抓回来的页面结构
+        val html = javaClass.getResourceAsStream("/xsxk_rounds.html")!!
+            .readBytes().decodeToString()
+
+        val rounds = parseRounds(html, "$base/xsxk/xklc_list")
+
+        // parseRounds 能认出 attend_class 轮次表（表头含选课名称），只是没有数据行
+        assertTrue(rounds.isEmpty())
+        // fetchRounds 的 pageKnown 依据：页面包含「选课名称」表头
+        assertTrue(html.contains("选课名称"))
+    }
+
+    @Test
+    fun `轮次开放时解析出轮次和进入链接`() {
+        val html = """
+            <html><body>
+            <table id="attend_class">
+              <tr><th>学年学期</th><th>选课名称</th><th>选课时间</th><th>操作</th></tr>
+              <tr>
+                <td>2026-2027-1</td>
+                <td>2026-2027-1第一轮选课</td>
+                <td>2026-09-01 ~ 2026-09-05</td>
+                <td><a href="/jsxsd/xsxk/xsxkIndex?xklcid=123">进入选课</a></td>
+              </tr>
+            </table>
+            </body></html>
+        """.trimIndent()
+
+        val rounds = parseRounds(html, "$base/xsxk/xklc_list")
+
+        assertEquals(1, rounds.size)
+        assertEquals("2026-2027-1第一轮选课", rounds.first().name)
+        assertEquals("$base/xsxk/xsxkIndex?xklcid=123", rounds.first().entryUrl)
+    }
+
     // ------------------------------------------------------------------ 入口发现
 
     @Test

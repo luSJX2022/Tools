@@ -1,0 +1,51 @@
+<table id="xfxd_class" border="1" width="100%" cellspacing="0" cellpadding="0" bordercolor="#E5E5E5" style="border-collapse:collapse !important;">
+                <input type="hidden" id="ydxklcid" name="ydxklcid" value=""/>
+                <tr>
+                    <th class="layui-table-col-special" style="height: 30px;!important;">序号</th>
+                    <th class="layui-table-col-special">课组名称</th>
+                    <th class="layui-table-col-special">应修</th>
+                    <th class="layui-table-col-special">已修</th>
+                    <th class="layui-table-col-special">未修</th>
+                </tr>
+
+            </table>
+            <table border="0" width="100%" cellspacing="0" cellpadding="0" bordercolor="#E5E5E5" style="border-collapse:collapse !important;margin-top: 20px">
+                <tr>
+                    <td colspan="5" align="center">
+                        <input type="button" class="edu-btn primary" value="我已仔细阅读以上学分修读情况" onclick="enterxk();"/>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+</div>
+<script type="text/javascript">
+    function down() {
+        window.Form1.action = "/jsxsd/xsxk/downloadXksc";
+        window.Form1.submit();
+    }
+
+</script>
+
+
+
+<form action="" class="table-content layui-form">
+    <div class="Nsb_layout_r fixed-middle-item">
+        <table id="attend_class" width="100%" border="0" cellspacing="0" cellpadding="0" class="layui-table">
+            <tr>
+                <th class="layui-table-col-special">学年学期</th>
+                <th class="layui-table-col-special">选课名称</th>
+                <!--
+                <th class="Nsb_r_list_thb" scope="col" align="center"  >选课类别</th>
+                <th class="Nsb_r_list_thb" scope="col" align="center"  >选课阶段</th>
+                 -->
+                <th class="layui-table-col-special">选课时间</th>
+                <th class="layui-table-col-special">操作</th>
+            </tr>
+
+
+                <tr>
+                    <td colspan="4">未查询到数据</td>
+                </tr>
+
+        </table>
