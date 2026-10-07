@@ -141,6 +141,20 @@ fun AccountScreen(
                     InfoRow("学期", snapshot.xnxqh.ifBlank { "—" })
                     InfoRow("课程条数", snapshot.sessions.size.toString() + " 条")
                     InfoRow("上次同步", formatTime(snapshot.updatedAt))
+                    Spacer(Modifier.height(8.dp))
+                    // 课表显示开关（原先在设置页，挪到这里离课表更近）
+                    SwitchRow(
+                        title = "显示周末",
+                        subtitle = "关掉后课表只显示周一到周五",
+                        checked = settings.showWeekend,
+                        onCheckedChange = { on -> onUpdate { it.copy(showWeekend = on) } },
+                    )
+                    SwitchRow(
+                        title = "显示非本周课程",
+                        subtitle = "把单双周不上课的课灰色显示出来",
+                        checked = settings.showOtherWeeks,
+                        onCheckedChange = { on -> onUpdate { it.copy(showOtherWeeks = on) } },
+                    )
                 }
             }
 
@@ -440,6 +454,24 @@ private fun InfoRow(label: String, value: String) {
             modifier = Modifier.width(84.dp),
         )
         Text(text = value, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

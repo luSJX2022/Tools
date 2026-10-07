@@ -28,8 +28,8 @@ data class AppSettings(
     /** `SYSTEM` / `LIGHT` / `DARK`。 */
     val themeMode: String = "SYSTEM",
     val dynamicColor: Boolean = true,
-    /** 课表上是否显示非本周的课（灰显）。 */
-    val showOtherWeeks: Boolean = true,
+    /** 课表上是否显示非本周的课（灰显）。默认关闭。 */
+    val showOtherWeeks: Boolean = false,
     /** 课表是否显示周六周日，关掉后只留周一到周五。 */
     val showWeekend: Boolean = true,
     /** 番剧一集放完是否自动接着放下一集。 */

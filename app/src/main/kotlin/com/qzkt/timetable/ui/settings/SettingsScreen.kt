@@ -120,21 +120,8 @@ private fun PersonalizationSection(settings: AppSettings, onUpdate: ((AppSetting
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         Spacer(Modifier.height(8.dp))
-        // 首页入口的隐藏和排序已挪到工具页右上角的「编辑」里，设置页不再重复一份
-        SwitchRow(
-            title = "显示周末",
-            subtitle = "关掉后课表只显示周一到周五",
-            checked = settings.showWeekend,
-            onCheckedChange = { on -> onUpdate { it.copy(showWeekend = on) } },
-        )
-        Spacer(Modifier.height(8.dp))
-        SwitchRow(
-            title = "显示非本周课程",
-            subtitle = "把单双周不上课的课灰色显示出来",
-            checked = settings.showOtherWeeks,
-            onCheckedChange = { on -> onUpdate { it.copy(showOtherWeeks = on) } },
-        )
-        Spacer(Modifier.height(8.dp))
+        // 首页入口的隐藏和排序已挪到工具页右上角的「编辑」里，设置页不再重复一份；
+        // 显示周末 / 显示非本周课程挪到了教务账号页（离课表更近）
         SwitchRow(
             title = "自动连播",
             subtitle = "番剧一集放完接着放下一集",

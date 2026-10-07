@@ -77,7 +77,7 @@ fun SetupScreen(
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
     ) {
-        Text("连接强智教务系统", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("配置账号", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(
             text = "登录后自动导入本学期课表，并定时同步课表变动。",
@@ -203,14 +203,6 @@ fun SetupScreen(
         ) {
             Text(if (settings.hasSession) "重新在应用内登录" else "在应用内登录（所有学校通用，推荐）")
         }
-
-        Spacer(Modifier.height(10.dp))
-
-        Text(
-            text = "账号密码导入要求学校没有反自动化校验；应用内登录任何学校都能用，登录一次后同样会后台自动同步。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
 
         Spacer(Modifier.height(18.dp))
 
