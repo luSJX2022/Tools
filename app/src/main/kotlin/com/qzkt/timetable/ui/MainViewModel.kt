@@ -51,6 +51,9 @@ data class WebImportResult(
     val rawSnippet: String = "",
 )
 
+/** 选课验证时试过的一个候选入口：地址 + 页面内容摘要。 */
+data class TriedCandidate(val url: String, val snippet: String)
+
 /** 选课页（原生）的状态：轮次列表 + 登录态 + 入口是否已知。 */
 data class CourseRoundsUiState(
     val loading: Boolean = false,
@@ -61,8 +64,8 @@ data class CourseRoundsUiState(
     val rounds: List<XsxkRound> = emptyList(),
     /** 入口页面内容摘要：结构没认出来时显示，方便对照排查。 */
     val entrySnippet: String = "",
-    /** 试过的候选入口地址（诊断用）。 */
-    val triedUrls: List<String> = emptyList(),
+    /** 试过的候选入口（地址 + 摘要，诊断用）。 */
+    val tried: List<TriedCandidate> = emptyList(),
 )
 
 class MainViewModel(private val container: AppContainer) : ViewModel() {
@@ -210,7 +213,10 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         var cookie = settings.sessionCookie
 
         // 候选入口：记住的 → 带学期参数的常见地址（选课首页经常要学期才出轮次表）→ 菜单挖到的 → 裸常见地址
-        val term = runCatching { container.repository.snapshot.value.xnxqh }.getOrNull().orEmpty()
+        // 学期代码优先取课表快照，快照里没有（网页导入的课表可能没写）就按日期推算
+        val term = runCatching { container.repository.snapshot.value.xnxqh }.getOrNull()
+            .orEmpty()
+            .ifBlank { computeTermCode(LocalDate.now()) }
         val candidates = buildList {
             if (settings.courseSelectUrl.isNotBlank()) add(settings.courseSelectUrl)
             if (term.isNotBlank()) {
@@ -256,11 +262,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         }
 
         // 逐个候选验证：页面长得像轮次表（pageKnown）就用它
-        val tried = mutableListOf<String>()
+        val tried = mutableListOf<TriedCandidate>()
         var lastSnippet = ""
         for (candidate in candidates) {
             outcome = tryFetch(candidate)
-            tried += candidate
+            tried += TriedCandidate(candidate, outcome.pageSnippet.take(200))
             lastSnippet = outcome.pageSnippet
             if (outcome.pageKnown) {
                 if (settings.courseSelectUrl != candidate) {
@@ -275,8 +281,14 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             error = "试了 ${tried.size} 个候选入口都不是选课轮次表，可以手动粘贴正确的网址",
             needsEntryUrl = true,
             entrySnippet = lastSnippet,
-            triedUrls = tried,
+            tried = tried,
         )
+    }
+
+    /** 按日期推算学年学期代码：2026 年 10 月 → 2026-2027-1。 */
+    private fun computeTermCode(today: LocalDate): String {
+        val year = today.year
+        return if (today.monthValue >= 7) "$year-${year + 1}-1" else "${year - 1}-$year-2"
     }
 
     /** 导出备份（设置 + 书架 + 追番）到用户选的文件。 */

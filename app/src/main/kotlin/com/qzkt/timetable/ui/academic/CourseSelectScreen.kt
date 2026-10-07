@@ -126,11 +126,13 @@ fun CourseSelectScreen(
                             Spacer(Modifier.height(20.dp))
                             ManualEntryRow(onSave = onSaveEntryUrl)
                         }
-                        // 试过的候选入口 + 入口页面内容摘要：发截图给开发就能对着真实页面写解析
-                        if (state.triedUrls.isNotEmpty()) {
+                        // 试过的候选入口 + 各自的内容摘要：发截图给开发就能对着真实页面写解析
+                        if (state.tried.isNotEmpty()) {
                             Spacer(Modifier.height(12.dp))
                             Text(
-                                text = "试过的入口：\n" + state.triedUrls.joinToString("\n"),
+                                text = "试过的入口：\n" + state.tried.joinToString("\n") { c ->
+                                    "${c.url}\n　└ ${c.snippet.take(120)}"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth(),
