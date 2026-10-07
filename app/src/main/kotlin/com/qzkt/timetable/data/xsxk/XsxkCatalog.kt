@@ -113,18 +113,29 @@ internal fun parseRounds(html: String, pageUrl: String): List<XsxkRound> {
     }
 }
 
+/** 强智各代选课页的常见地址（兜底候选；真伪由调用方拉取后按 pageKnown 验证）。 */
+internal val COURSE_SELECT_CANDIDATES = listOf(
+    "/xsxk/xsxk_index.html",
+    "/xsxk/xsxkIndex.html",
+    "/xsxk/index.html",
+    "/xsxkEntry.do",
+    "/xsxk/xsxk.html",
+)
+
 /**
- * 从教务主界面的菜单里找「学生选课中心」入口，按可靠性递进三步：
+ * 从教务主界面收集所有「像选课页」的候选地址，按可靠性排序：
  *
  * 1. 主界面 `<a>` 扫描：href 带 `xsxk`（强智选课路径的通用特征）或文字带「选课」；
  * 2. 整页原文挖 `xsxk` 地址 —— 新一代主界面的菜单是 JS 动态生成的，
  *    `<a>` 扫不到，但选课地址往往就写在页面脚本配置里；
- * 3. 菜单可能放在 iframe 里：iframe 的 src 也抓来扫一遍。
+ * 3. 菜单可能放在 iframe 里：iframe 的 src 也抓来扫一遍；
+ * 4. 常见选课地址兜底（真伪由调用方拉取后按 pageKnown 验证）。
  *
- * 相对地址按浏览器语义解析（基于页面 URL）；全找不到返回 null。
+ * 相对地址按浏览器语义解析（基于页面 URL）；去重后返回，可能为空。
  * xsxk 命名的脚本/样式资源（.js/.css）不算入口。
  */
-internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
+fun discoverCourseSelectUrls(baseUrl: String, cookie: String): List<String> {
+    val candidates = mutableListOf<String>()
     val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -136,20 +147,42 @@ internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
             if (body.isBlank() || body.contains("userAccount")) continue // 被打回登录页
 
             val doc = Jsoup.parse(body, pageUrl)
-            scanForCourseSelectUrl(doc, pageUrl)?.let { return it }
+            collectCandidates(doc, pageUrl, candidates)
 
             for (frame in doc.select("iframe[src], frame[src]")) {
                 val frameUrl = pageUrl.toHttpUrlOrNull()?.resolve(frame.attr("src"))?.toString() ?: continue
                 val frameBody = fetchPage(client, frameUrl, cookie) ?: continue
                 if (frameBody.isBlank() || frameBody.contains("userAccount")) continue
-                scanForCourseSelectUrl(Jsoup.parse(frameBody, frameUrl), frameUrl)?.let { return it }
+                collectCandidates(Jsoup.parse(frameBody, frameUrl), frameUrl, candidates)
             }
         }
     } finally {
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
     }
-    return null
+    COURSE_SELECT_CANDIDATES.forEach { candidates += baseUrl + it }
+    return candidates.distinct()
+}
+
+private fun collectCandidates(doc: org.jsoup.nodes.Document, pageUrl: String, into: MutableList<String>) {
+    fun add(href: String) {
+        if (isCourseSelectPage(href)) {
+            pageUrl.toHttpUrlOrNull()?.resolve(href)?.toString()?.let { into += it }
+        }
+    }
+    doc.select("a[href]").forEach { a ->
+        val href = a.attr("href").trim()
+        val textMatch = a.text().replace(" ", "").contains("选课")
+        if (href.isNotBlank() && !href.startsWith("javascript", ignoreCase = true) &&
+            (href.contains("xsxk", ignoreCase = true) || textMatch)
+        ) {
+            add(href)
+        }
+    }
+    JS_URL_REGEX.findAll(doc.body().html())
+        .map { it.groupValues[1] }
+        .filter { JS_URL_VALID(it) }
+        .forEach(::add)
 }
 
 private fun fetchPage(client: OkHttpClient, url: String, cookie: String): String? =
@@ -168,26 +201,6 @@ private fun fetchPage(client: OkHttpClient, url: String, cookie: String): String
             }
         }
     }.getOrNull()
-
-/** 单个页面里的选课入口扫描：`<a>` 优先，扫不到再从整页原文挖带 xsxk 的页面地址。 */
-private fun scanForCourseSelectUrl(doc: org.jsoup.nodes.Document, pageUrl: String): String? {
-    val anchor = doc.select("a[href]").firstOrNull { a ->
-        a.attr("href").contains("xsxk", ignoreCase = true) ||
-            a.text().replace(" ", "").contains("选课")
-    }
-    val fromAnchor = anchor?.attr("href")?.trim().takeUnless {
-        it.isNullOrEmpty() || it.startsWith("javascript", ignoreCase = true)
-    }
-    val found = fromAnchor
-        ?: JS_URL_REGEX.findAll(doc.body().html()).map { it.groupValues[1] }
-            .firstOrNull { href -> JS_URL_VALID(href) }
-    // 菜单模板里可能挂着 xsxk 命名的脚本/样式资源，那不是页面入口
-    if (found != null && isCourseSelectPage(found)) {
-        // 按浏览器语义解析：相对链接基于页面 URL（含目录），不是基于 /jsxsd 根
-        return pageUrl.toHttpUrlOrNull()?.resolve(found)?.toString()
-    }
-    return null
-}
 
 /** 页面脚本里挖地址：引号包起来的、带 xsxk 的字符串（JS 动态菜单的配置一般长这样）。 */
 private val JS_URL_REGEX = Regex("[\"']([^\"']*xsxk[^\"']*)[\"']", RegexOption.IGNORE_CASE)

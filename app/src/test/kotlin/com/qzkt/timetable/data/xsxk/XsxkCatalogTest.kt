@@ -4,7 +4,6 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -100,9 +99,9 @@ class XsxkCatalogTest {
             </body></html>
         """.trimIndent()
 
-        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
+        val urls = discoverCourseSelectUrls(base, "JSESSIONID=ABC")
 
-        assertEquals("$base/xsxk/xsxkIndex.html?xnxqdm=2026-2027-1", url)
+        assertTrue("应包含菜单里的选课地址，实际：$urls", urls.contains("$base/xsxk/xsxkIndex.html?xnxqdm=2026-2027-1"))
     }
 
     @Test
@@ -116,25 +115,27 @@ class XsxkCatalogTest {
             <html><body><a href="xsxk/xsxkIndex.html">学生选课中心</a></body></html>
         """.trimIndent()
 
-        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
+        val urls = discoverCourseSelectUrls(base, "JSESSIONID=ABC")
 
         // 内嵌页在 /jsxsd/menu/ 下，相对链接按它所在目录解析
-        assertEquals("$base/menu/xsxk/xsxkIndex.html", url)
+        assertTrue("应包含 iframe 里的选课地址，实际：$urls", urls.contains("$base/menu/xsxk/xsxkIndex.html"))
     }
 
     @Test
-    fun `被打回登录页或没有入口时返回 null`() {
+    fun `被打回登录页或没有入口时只剩常见地址兜底`() {
         menuHtml = """
             <html><body><form id="loginForm"><input name="userAccount"></form></body></html>
         """.trimIndent()
 
-        assertNull(discoverCourseSelectUrl(base, "JSESSIONID=EXPIRED"))
+        val expired = discoverCourseSelectUrls(base, "JSESSIONID=EXPIRED")
+        assertTrue("登录页扫不出菜单地址，实际：$expired", expired.none { it.contains("framework") })
 
         menuHtml = """
             <html><body><a href="/jsxsd/framework/xsMainV.htmlx">首页</a></body></html>
         """.trimIndent()
 
-        assertNull(discoverCourseSelectUrl(base, "JSESSIONID=ABC"))
+        val urls = discoverCourseSelectUrls(base, "JSESSIONID=ABC")
+        assertTrue("兜底候选应该还在，实际：$urls", urls.contains("$base/xsxk/xsxk_index.html"))
     }
 
     @Test
@@ -146,7 +147,9 @@ class XsxkCatalogTest {
             </body></html>
         """.trimIndent()
 
-        assertNull(discoverCourseSelectUrl(base, "JSESSIONID=ABC"))
+        val urls = discoverCourseSelectUrls(base, "JSESSIONID=ABC")
+
+        assertTrue("脚本资源不该进候选，实际：$urls", urls.none { it.endsWith(".js") })
     }
 
     // ------------------------------------------------------------------ 假服务端

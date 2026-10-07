@@ -126,7 +126,16 @@ fun CourseSelectScreen(
                             Spacer(Modifier.height(20.dp))
                             ManualEntryRow(onSave = onSaveEntryUrl)
                         }
-                        // 入口页面内容摘要：发截图给开发就能对着真实页面写解析
+                        // 试过的候选入口 + 入口页面内容摘要：发截图给开发就能对着真实页面写解析
+                        if (state.triedUrls.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                text = "试过的入口：\n" + state.triedUrls.joinToString("\n"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         if (state.entrySnippet.isNotBlank()) {
                             Spacer(Modifier.height(16.dp))
                             Text(
