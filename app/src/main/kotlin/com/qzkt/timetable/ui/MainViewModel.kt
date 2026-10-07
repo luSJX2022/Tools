@@ -9,7 +9,14 @@ import com.qzkt.timetable.data.TimetableSnapshot
 import com.qzkt.timetable.data.backup.BackupData
 import com.qzkt.timetable.data.backup.BackupManager
 import com.qzkt.timetable.data.backup.BackupManager.Companion.json
+import com.qzkt.timetable.data.xsxk.RoundsOutcome
+import com.qzkt.timetable.data.xsxk.XsxkRound
+import com.qzkt.timetable.data.xsxk.discoverCourseSelectUrl
+import com.qzkt.timetable.data.xsxk.fetchRounds
 import com.qzkt.timetable.jw.deriveFirstMonday
+import com.qzkt.timetable.jw.qz.QzHttp
+import com.qzkt.timetable.jw.qz.QzJsxsdAdapter
+import com.qzkt.timetable.jw.qz.QzJsxsdAutoLogin
 import com.qzkt.timetable.jw.qz.QzJsxsdDirect
 import com.qzkt.timetable.jw.qz.QzWebParser
 import com.qzkt.timetable.sync.SyncScheduler
@@ -41,6 +48,16 @@ data class WebImportResult(
     val count: Int,
     /** 失败时把拿到的原始页面片段带回来，好在界面上直接看。 */
     val rawSnippet: String = "",
+)
+
+/** 选课页（原生）的状态：轮次列表 + 登录态 + 入口是否已知。 */
+data class CourseRoundsUiState(
+    val loading: Boolean = false,
+    val error: String? = null,
+    val needsRelogin: Boolean = false,
+    /** true = 没找到选课入口网址，界面给手动粘贴的地方。 */
+    val needsEntryUrl: Boolean = false,
+    val rounds: List<XsxkRound> = emptyList(),
 )
 
 class MainViewModel(private val container: AppContainer) : ViewModel() {
@@ -166,6 +183,85 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         if (url.isBlank() || url == _settings.value.courseSelectUrl) return
         viewModelScope.launch {
             container.settingsStore.update { it.copy(courseSelectUrl = url) }
+        }
+        refreshCourseRounds()
+    }
+
+    private val _courseRounds = MutableStateFlow(CourseRoundsUiState())
+    val courseRounds: StateFlow<CourseRoundsUiState> = _courseRounds.asStateFlow()
+
+    /** 拉选课轮次：入口地址（记住的 → 菜单发现的）→ 会话拉取 → 过期自动登录再试。 */
+    fun refreshCourseRounds() = viewModelScope.launch {
+        val settings = container.settingsStore.settings.first()
+        if (settings.baseUrl.isBlank()) {
+            _courseRounds.value = CourseRoundsUiState(error = "先在教务页配置教务账号")
+            return@launch
+        }
+        _courseRounds.value = CourseRoundsUiState(loading = true)
+        val base = runCatching { QzJsxsdAdapter.resolveBase(settings.baseUrl) }.getOrElse {
+            _courseRounds.value = CourseRoundsUiState(error = "教务地址不对：${settings.baseUrl}")
+            return@launch
+        }
+
+        var cookie = settings.sessionCookie
+        var entry: String? = settings.courseSelectUrl.ifBlank { null }
+        if (entry == null) {
+            val discovered = withContext(Dispatchers.IO) { discoverCourseSelectUrl(base, cookie) }
+            entry = discovered
+            if (discovered != null) {
+                container.settingsStore.update { it.copy(courseSelectUrl = discovered) }
+            }
+        }
+
+        var outcome = if (entry == null) {
+            RoundsOutcome(emptyList(), loggedIn = settings.hasSession, pageKnown = false)
+        } else {
+            val url = entry
+            withContext(Dispatchers.IO) { fetchRounds(QzHttp.defaultClient(), url, cookie) }
+        }
+
+        // 会话过期：用账号密码自动登录换新会话（新一代强智登录纯 HTTP 能过）再试一次
+        if (!outcome.loggedIn && settings.username.isNotBlank() && settings.password.isNotBlank()) {
+            val newCookie = runCatching {
+                withContext(Dispatchers.IO) {
+                    QzJsxsdAutoLogin.login(QzHttp.defaultClient(), base, settings.username, settings.password)
+                }
+            }.getOrNull()
+            if (newCookie != null) {
+                cookie = newCookie
+                container.settingsStore.update {
+                    it.copy(sessionCookie = newCookie, sessionSavedAt = System.currentTimeMillis())
+                }
+                if (entry == null) {
+                    val discovered = withContext(Dispatchers.IO) { discoverCourseSelectUrl(base, cookie) }
+                    entry = discovered
+                    discovered?.let { learned ->
+                        container.settingsStore.update { it.copy(courseSelectUrl = learned) }
+                    }
+                }
+                outcome = if (entry != null) {
+                    val url = entry
+                    withContext(Dispatchers.IO) { fetchRounds(QzHttp.defaultClient(), url, cookie) }
+                } else {
+                    RoundsOutcome(emptyList(), loggedIn = true, pageKnown = false)
+                }
+            }
+        }
+
+        _courseRounds.value = when {
+            !outcome.loggedIn -> CourseRoundsUiState(
+                error = "会话过期且自动登录失败，请去应用内登录一次",
+                needsRelogin = true,
+            )
+            entry == null -> CourseRoundsUiState(
+                error = "没找到选课入口网址",
+                needsEntryUrl = true,
+            )
+            !outcome.pageKnown -> CourseRoundsUiState(
+                error = "选课页面结构没认出来（入口地址可能不对），可以手动粘贴正确的网址",
+                needsEntryUrl = true,
+            )
+            else -> CourseRoundsUiState(rounds = outcome.rounds)
         }
     }
 

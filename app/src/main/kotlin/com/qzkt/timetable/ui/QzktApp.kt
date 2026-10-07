@@ -102,6 +102,7 @@ fun QzktApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val displayWeek by viewModel.displayWeek.collectAsStateWithLifecycle()
     val webImportResult by viewModel.webImportResult.collectAsStateWithLifecycle()
+    val courseRounds by viewModel.courseRounds.collectAsStateWithLifecycle()
     val animeFavorites by animeViewModel.favorites.collectAsStateWithLifecycle()
     val animeSession by animeViewModel.animeSession.collectAsStateWithLifecycle()
 
@@ -276,11 +277,10 @@ fun QzktApp(
                         },
                         courseSelectContent = {
                             CourseSelectScreen(
-                                baseUrl = settings.baseUrl,
-                                sessionCookie = settings.sessionCookie,
-                                hasSession = settings.hasSession,
-                                learnedUrl = settings.courseSelectUrl,
-                                onLearnCourseSelectUrl = viewModel::saveCourseSelectUrl,
+                                state = courseRounds,
+                                onRefresh = viewModel::refreshCourseRounds,
+                                onSaveEntryUrl = viewModel::saveCourseSelectUrl,
+                                onBack = { navController.popBackStack() },
                                 onOpenWebLogin = { navController.navigate(Routes.WEB) },
                             )
                         },
