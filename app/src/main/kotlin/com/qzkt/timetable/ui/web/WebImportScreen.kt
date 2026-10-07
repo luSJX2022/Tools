@@ -385,6 +385,10 @@ fun WebImportScreen(
                                             currentUrl = url
                                             if (visitedUrls.lastOrNull() != url) visitedUrls.add(url)
                                         }
+                                        // 学校登录页注入深色主题：和 App 界面一体，不再是刺眼的白底蓝banner
+                                        if (view?.title?.contains("登录") == true) {
+                                            view.evaluateJavascript(LOGIN_THEME_JS, null)
+                                        }
                                         // 只探主页面：这里面能区分"真的空白"和"frameset 没有 body"
                                         if (view != null && url != null && url == view.url) {
                                             probeBlankPage(view, url) { blankPageAt = it }
@@ -626,6 +630,32 @@ private val CAPTURE_SCRIPT = """
     documents: documents,
     text: text.substring(0, 4000)
   }));
+})();
+""".trimIndent()
+
+/**
+ * 学校登录页的深色主题注入：App 内打开登录页时把学校那套白底蓝横幅的样式
+ * 覆盖成和 App 一致的深色界面（输入框/按钮圆角化、藏掉小屏上占地方的宣传图）。
+ * 脚本带幂等标记，页面重复加载也不会叠层。
+ */
+private val LOGIN_THEME_JS = """
+(function () {
+  if (document.getElementById('qz-dark-style')) return;
+  var css = [
+    'html, body, .edu-container-new, .edu-content-new, .edu-map-new, .logo-area-new { background: #141318 !important; background-image: none !important; }',
+    '#swiper, .layui-carousel, .edu-map-new { display: none !important; }',
+    '.rt.login-form-new { background: transparent !important; margin: 0 auto !important; float: none !important; }',
+    'body, .edu-container-new, .edu-content-new, .rt, .login-form-new, .form-item-new, .form-item, h1, h2, h3, span { color: #e6e1e5 !important; }',
+    'input#userAccount, input#userPassword { background: #232329 !important; color: #e6e1e5 !important; border: 1px solid #3a3a42 !important; border-radius: 12px !important; height: 46px !important; padding: 0 12px !important; box-sizing: border-box !important; outline: none !important; font-size: 15px !important; }',
+    'input::placeholder { color: #7a747e !important; }',
+    '.btn-login-new { background: linear-gradient(90deg, #6750a4, #7f67be) !important; color: #ffffff !important; border: none !important; border-radius: 24px !important; height: 46px !important; font-size: 16px !important; cursor: pointer; }',
+    '.login-cr, p { color: #8a8390 !important; }',
+    '.logo-area-new img { max-width: 70% !important; }'
+  ].join('\\n');
+  var style = document.createElement('style');
+  style.id = 'qz-dark-style';
+  style.textContent = css;
+  document.head.appendChild(style);
 })();
 """.trimIndent()
 

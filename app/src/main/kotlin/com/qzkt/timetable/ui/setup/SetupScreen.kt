@@ -8,14 +8,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -27,10 +36,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qzkt.timetable.data.AppSettings
@@ -56,6 +67,7 @@ fun SetupScreen(
     var password by remember(settings.password) { mutableStateOf(settings.password) }
     var weekCount by remember(settings.weekCount) { mutableStateOf(settings.weekCount.toString()) }
     var firstMonday by remember(settings.firstMonday) { mutableStateOf(settings.firstMonday) }
+    var showPassword by remember { mutableStateOf(false) }
 
     val canSubmit = baseUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank() && !uiState.busy
 
@@ -75,60 +87,75 @@ fun SetupScreen(
 
         Spacer(Modifier.height(20.dp))
 
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
-            label = { Text("学校强智地址") },
-            placeholder = { Text("http://jwgl.xxx.edu.cn") },
-            supportingText = { Text("填学校教务系统的首页地址即可，例如 http://jwgl.xxx.edu.cn") },
-            singleLine = true,
+        Card(
             modifier = Modifier.fillMaxWidth(),
-        )
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("教务账号", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                SetupField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = "学校强智地址",
+                    placeholder = "http://jwgl.xxx.edu.cn",
+                    icon = Icons.Default.Link,
+                    supportingText = "填教务系统首页地址即可",
+                    imeAction = ImeAction.Next,
+                )
+                Spacer(Modifier.height(10.dp))
+                SetupField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = "学号",
+                    icon = Icons.Default.Person,
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Next,
+                )
+                Spacer(Modifier.height(10.dp))
+                SetupField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = "密码",
+                    icon = Icons.Default.Lock,
+                    isPassword = true,
+                    showPassword = showPassword,
+                    onTogglePassword = { showPassword = !showPassword },
+                    supportingText = "只保存在本机，用于登录学校教务系统",
+                    imeAction = ImeAction.Done,
+                )
+            }
+        }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
 
-        OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
-            label = { Text("学号") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+        Card(
             modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("密码") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-            supportingText = { Text("只保存在本机，用于登录学校教务系统") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
-                value = weekCount,
-                onValueChange = { input -> weekCount = input.filter { it.isDigit() }.take(2) },
-                label = { Text("学期周数") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = firstMonday,
-                onValueChange = { firstMonday = it },
-                label = { Text("第 1 周周一") },
-                placeholder = { Text("2026-09-07") },
-                singleLine = true,
-                supportingText = { Text("可留空") },
-                modifier = Modifier.weight(1.4f),
-            )
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("学期", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = weekCount,
+                        onValueChange = { input -> weekCount = input.filter { it.isDigit() }.take(2) },
+                        label = { Text("学期周数") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = firstMonday,
+                        onValueChange = { firstMonday = it },
+                        label = { Text("第 1 周周一") },
+                        placeholder = { Text("2026-09-07") },
+                        singleLine = true,
+                        supportingText = { Text("可留空") },
+                        modifier = Modifier.weight(1.4f),
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(20.dp))
@@ -165,16 +192,6 @@ fun SetupScreen(
 
         Spacer(Modifier.height(20.dp))
 
-        Text(
-            text = "两种导入方式：\n" +
-                "· 账号密码导入 —— 部分学校可用（要求学校没有反自动化校验）\n" +
-                "· 在应用内登录 —— 所有学校都能用，登录一次后同样会后台自动同步",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(Modifier.height(8.dp))
-
         Button(
             onClick = {
                 if (baseUrl.isNotBlank()) {
@@ -184,13 +201,74 @@ fun SetupScreen(
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (settings.hasSession) "重新在应用内登录" else "在应用内登录课表（推荐）")
+            Text(if (settings.hasSession) "重新在应用内登录" else "在应用内登录（所有学校通用，推荐）")
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            text = "账号密码导入要求学校没有反自动化校验；应用内登录任何学校都能用，登录一次后同样会后台自动同步。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(18.dp))
 
         TipCard()
     }
+}
+
+/** 配置向导的统一输入行：左侧图标 + 可选的密码可见切换。 */
+@Composable
+private fun SetupField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    icon: ImageVector,
+    placeholder: String? = null,
+    supportingText: String? = null,
+    isPassword: Boolean = false,
+    showPassword: Boolean = false,
+    onTogglePassword: (() -> Unit)? = null,
+    keyboardType: KeyboardType? = null,
+    imeAction: ImeAction = ImeAction.Next,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        placeholder = placeholder?.let { { Text(it) } },
+        supportingText = supportingText?.let { { Text(it) } },
+        singleLine = true,
+        leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        trailingIcon = if (isPassword && onTogglePassword != null) {
+            {
+                IconButton(onClick = onTogglePassword) {
+                    Icon(
+                        if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (showPassword) "隐藏密码" else "显示密码",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        } else {
+            null
+        },
+        visualTransformation = if (isPassword && !showPassword) {
+            PasswordVisualTransformation()
+        } else {
+            VisualTransformation.None
+        },
+        keyboardOptions = KeyboardOptions(
+            keyboardType = when {
+                isPassword -> KeyboardType.Password
+                keyboardType != null -> keyboardType
+                else -> KeyboardType.Text
+            },
+            imeAction = imeAction,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
