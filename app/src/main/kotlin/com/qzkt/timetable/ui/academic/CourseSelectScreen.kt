@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.qzkt.timetable.jw.qz.QzHttp
@@ -74,8 +77,11 @@ fun CourseSelectScreen(
     var discovering by remember { mutableStateOf(hasSession && baseUrl.isNotBlank() && learnedUrl.isBlank()) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(false) }
-    /** true = 没找到直达链接、退回主界面，页顶给菜单路径提示。 */
+    /** true = 没找到直达链接、退回主框架，页顶给菜单路径提示。 */
     var fallback by rememberSaveable { mutableStateOf(false) }
+    /** WebView 实际加载到的地址（诊断用，页顶可见）。 */
+    var currentUrl by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
     // 选课流程会在网页里一层层点进去：系统返回键先给 WebView 后退，退无可退再出教务页
     BackHandler(enabled = webView?.canGoBack() == true) {
@@ -111,6 +117,8 @@ fun CourseSelectScreen(
             return@LaunchedEffect
         }
         discovering = true
+        // 只做菜单里的锚点/脚本地址扫描，不再盲试候选地址 —— 试到的直开页面
+        // 经常是白页（选课中心要带着主框架的令牌进）。主框架页本身就是选课入口。
         val found = withContext(Dispatchers.IO) { discoverCourseSelectUrl(baseUrl, sessionCookie) }
         // 选课中心是主框架页（xsMainV.htmlx）里的内部页签，地址栏不会变 ——
         // 找不到更深的直达链接就主框架本身就是入口，在里面点菜单进选课
@@ -125,6 +133,23 @@ fun CourseSelectScreen(
             TopAppBar(
                 title = { Text("选课") },
                 actions = {
+                    // 内嵌页万一渲染不出来，系统浏览器里登录一次就是长期的登录态
+                    IconButton(
+                        onClick = {
+                            val url = targetUrl ?: return@IconButton
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(url),
+                                    ),
+                                )
+                            }
+                        },
+                        enabled = targetUrl != null,
+                    ) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = "在系统浏览器打开")
+                    }
                     if (targetUrl != null) {
                         IconButton(onClick = { webView?.reload() }, enabled = !pageLoading) {
                             Icon(Icons.Default.Refresh, contentDescription = "重新加载")
@@ -164,6 +189,17 @@ fun CourseSelectScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
+                // 当前加载的地址：页面上能看见 WebView 到底开到了哪（诊断用）
+                Text(
+                    text = "入口：" + (currentUrl ?: targetUrl.orEmpty()),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 3.dp),
+                )
                 if (fallback) {
                     var manualUrl by remember { mutableStateOf("") }
                     Text(
@@ -246,6 +282,7 @@ fun CourseSelectScreen(
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 pageLoading = true
+                                currentUrl = url
                                 // 第一次从主框架点进选课中心时把地址学下来，下次一键直达
                                 val target = url
                                 if (!target.isNullOrBlank() && isCourseSelectPage(target)) {
@@ -312,14 +349,6 @@ internal fun discoverCourseSelectUrl(baseUrl: String, cookie: String): String? {
                 scanForCourseSelectUrl(Jsoup.parse(frameBody, frameUrl), frameUrl)?.let { return it }
             }
         }
-
-        for (path in COURSE_SELECT_CANDIDATES) {
-            val body = fetchWithSession(client, baseUrl + path, cookie) ?: continue
-            if (body.isBlank() || body.contains("userAccount")) continue
-            if (body.contains("选课") || body.contains("xsxk", ignoreCase = true)) {
-                return baseUrl + path
-            }
-        }
     } finally {
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
@@ -364,7 +393,7 @@ private fun fetchWithSession(client: OkHttpClient, url: String, cookie: String):
         }
     }.getOrNull()
 
-/** 强智各代选课页的常见地址，配合会话逐个试探（试错的代价只是一次请求）。 */
+/** 强智各代选课页的常见地址（v1.0.51 起不再盲试：试到的直开页经常是缺令牌的白页）。 */
 internal val COURSE_SELECT_CANDIDATES = listOf(
     "/xsxk/xsxk_index.html",
     "/xsxk/xsxkIndex.html",

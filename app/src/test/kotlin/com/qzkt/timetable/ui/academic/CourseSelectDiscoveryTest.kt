@@ -108,31 +108,16 @@ class CourseSelectDiscoveryTest {
     }
 
     @Test
-    fun `菜单找不到时试探常见选课地址`() {
-        menuHtml = """
-            <html><body><a href="/jsxsd/framework/xsMainV.htmlx">首页</a></body></html>
-        """.trimIndent()
-        candidateHtml = "<html><body><div>选课中心 欢迎使用</div></body></html>"
-
-        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
-
-        assertEquals("$base/xsxk/xsxk_index.html", url)
-    }
-
-    @Test
     fun `xsxk 命名的脚本资源不算入口`() {
-        // 页面里挂着 xsxk 命名的 JS/模板不算页面链接，要继续往下找
+        // 页面里挂着 xsxk 命名的 JS/模板不算页面链接：找不到就返回 null（外层退回主框架）
         menuHtml = """
             <html><body>
               <a href="/jsxsd/xsxk/js/xsxkMenu.js">选课脚本</a>
               <a href="/jsxsd/framework/xsMainV.htmlx">首页</a>
             </body></html>
         """.trimIndent()
-        candidateHtml = "<html><body><div>选课中心</div></body></html>"
 
-        val url = discoverCourseSelectUrl(base, "JSESSIONID=ABC")
-
-        assertEquals("$base/xsxk/xsxk_index.html", url)
+        assertNull(discoverCourseSelectUrl(base, "JSESSIONID=ABC"))
     }
 
     @Test
@@ -154,16 +139,12 @@ class CourseSelectDiscoveryTest {
 
     // ------------------------------------------------------------------ 假服务端
 
-    /** 对 xsxk 目录试探请求的响应内容（默认给个「不像选课」的页面，命中用例再替换）。 */
-    private var candidateHtml: String = "<html><body>404 not found</body></html>"
-
     /** 菜单 iframe（src 带 menu）返回的内容。 */
     private var iframeHtml: String = "<html><body>空菜单</body></html>"
 
     private fun handle(exchange: HttpExchange) {
         val path = exchange.requestURI.path
         val body = when {
-            path.contains("/xsxk/") -> candidateHtml
             path.contains("menu") -> iframeHtml
             path.contains("framework") -> menuHtml
             else -> ""
