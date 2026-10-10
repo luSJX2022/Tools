@@ -5,8 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.jsoup.Jsoup
+import org.json.JSONArray
 import org.json.JSONObject
+import org.jsoup.Jsoup
 import java.util.concurrent.TimeUnit
 
 /** 在线书源：搜书 / 目录 / 正文。 */
@@ -195,10 +196,99 @@ class Quanben5Source(
     }
 }
 
+/**
+ * Project Gutenberg via Gutendex: Chinese-language works marked public domain
+ * in the United States. The Gutenberg HTML edition is used for reading.
+ */
+class GutenbergChineseSource(
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build(),
+    private val apiUrl: String = "https://gutendex.com",
+) : BookSource, CategorizedBookSource {
+
+    override val key = "gutenberg-zh"
+    override val name = "古腾堡中文公版（美国）"
+    override val categories = listOf("中文公版" to "zh")
+
+    override suspend fun search(keyword: String): List<OnlineBook> = withContext(Dispatchers.IO) {
+        val query = "$apiUrl/books/?languages=zh&copyright=false&search=${Uri.encode(keyword.trim())}"
+        parseGutenbergBookPage(getText(query)).books
+    }
+
+    override suspend fun categoryBooks(categoryId: String, page: Int): OnlineBookPage =
+        withContext(Dispatchers.IO) {
+            require(categoryId == "zh") { "未知分类" }
+            val pageQuery = if (page <= 1) "" else "&page=$page"
+            val pageResult = parseGutenbergBookPage(
+                getText("$apiUrl/books/?languages=zh&copyright=false$pageQuery"),
+            )
+            OnlineBookPage(pageResult.books, pageResult.hasNext)
+        }
+
+    override suspend fun catalog(bookUrl: String): List<OnlineChapter> = withContext(Dispatchers.IO) {
+        val uri = Uri.parse(bookUrl)
+        check(uri.scheme == "https" && uri.host == "www.gutenberg.org") { "书籍链接无效" }
+        listOf(OnlineChapter("全文", bookUrl))
+    }
+
+    override suspend fun content(chapter: OnlineChapter): String = withContext(Dispatchers.IO) {
+        val html = getText(chapter.url)
+        extractGutenbergText(html).ifBlank { error("书籍正文为空") }
+    }
+
+    private fun getText(url: String): String =
+        client.newCall(
+            Request.Builder().url(url)
+                .header("User-Agent", "Tools Android app (public-domain reader)")
+                .build(),
+        ).execute().use { response ->
+            check(response.isSuccessful) { "HTTP ${response.code}" }
+            response.body.string()
+        }
+}
+
+internal data class GutenbergBookPage(val books: List<OnlineBook>, val hasNext: Boolean)
+
+internal fun parseGutenbergBookPage(body: String): GutenbergBookPage {
+    val response = JSONObject(body)
+    val results = response.optJSONArray("results") ?: JSONArray()
+    val books = (0 until results.length()).mapNotNull { index ->
+        val item = results.optJSONObject(index) ?: return@mapNotNull null
+        val id = item.optLong("id")
+        val title = item.optString("title").trim()
+        if (id <= 0 || title.isEmpty()) return@mapNotNull null
+        val formats = item.optJSONObject("formats") ?: return@mapNotNull null
+        val htmlUrl = formats.keys().asSequence()
+            .filter { it.equals("text/html", ignoreCase = true) || it.startsWith("text/html;", ignoreCase = true) }
+            .mapNotNull { formats.optString(it).takeIf(String::isNotBlank) }
+            .firstOrNull() ?: return@mapNotNull null
+        val authors = item.optJSONArray("authors")
+        val author = authors?.optJSONObject(0)?.optString("name")?.takeIf { it.isNotBlank() }
+        val cover = formats.optString("image/jpeg").takeIf { it.isNotBlank() }
+        OnlineBook(
+            sourceKey = "gutenberg-zh",
+            bookUrl = htmlUrl,
+            name = title,
+            author = author,
+            cover = cover,
+        )
+    }
+    return GutenbergBookPage(books, !response.isNull("next") && response.optString("next").isNotBlank())
+}
+
+internal fun extractGutenbergText(html: String): String {
+    val doc = Jsoup.parse(html)
+    doc.select("#pg-header, #pg-footer, .pg-boilerplate, nav, script, style").remove()
+    val content = doc.selectFirst("#pg-main-content") ?: doc.body()
+    return content.textWithBreaks().trim()
+}
+
 /** 内置在线书源。 */
 object BookSources {
 
-    val all: List<BookSource> = listOf(Quanben5Source(), Kunnu8Source())
+    val all: List<BookSource> = listOf(Quanben5Source(), Kunnu8Source(), GutenbergChineseSource())
 
     fun byKey(key: String): BookSource = all.firstOrNull { it.key == key } ?: all.first()
 
