@@ -16,14 +16,6 @@
   字号 / 夜间模式；阅读进度按段落下标存，重排不丢位置。
 - **书城**：可切换全本小说网、鲲弩小说，以及古腾堡中文公版书；搜书 → 进书架 → 在线阅读。
   古腾堡书目通过 Gutendex 查询，只展示标记为美国公版的中文作品；版权状态可能因地区而异。
-- **国图**：国家图书馆馆藏检索（opac.nlc.cn，Aleph 系统）。单次 GET 检索、每页 10 条、
-  会话制翻页；解析出题名 / 作者 / 出版社 / 年份 / ISBN / 系统号，条目可跳浏览器看馆藏。
-  **电子阅读与借阅需要国图读者账号登录，这里不代办**，只提供书目信息与跳转。
-  解析用真实抓取页面做单元测试（`app/src/test/resources/nlc_search.html` 是原样夹具）。
-
-国图 OPAC 是 HTTP 明文（和学校教务系统一样），靠 [network_security_config](app/src/main/res/xml/network_security_config.xml) 放行。
-
-
 
 - Kotlin + Jetpack Compose（Material 3）+ Media3 + OkHttp + DataStore
 - minSdk 26，无 Room / 无 Hilt（JSON 文件持久化 + 手写依赖容器，理由见下文）
