@@ -30,12 +30,17 @@ data class CourseSession(
 
     companion object {
         /**
-         * 业务主键：课程名 + 星期 + 节次 + 教学班。
+         * 课程标识：课程名 + 星期 + 节次 + 教学班。
          *
-         * 刻意不含教室 / 教师 / 周次 —— 这三者变化时应该被识别为"同一节课被改动"，
-         * 而不是删掉旧课再加一门新课。
+         * 周次合并时，仓库会额外按教室区分同一课程，以支持教室按周调整。
          */
-        fun makeId(name: String, dayOfWeek: Int, startPeriod: Int, endPeriod: Int, teachingClass: String): String {
+        fun makeId(
+            name: String,
+            dayOfWeek: Int,
+            startPeriod: Int,
+            endPeriod: Int,
+            teachingClass: String,
+        ): String {
             val source = "$name|$dayOfWeek|$startPeriod|$endPeriod|$teachingClass"
             return sha1Hex(source).take(16)
         }

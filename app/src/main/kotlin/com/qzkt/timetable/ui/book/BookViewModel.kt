@@ -40,7 +40,7 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
     val night: StateFlow<Boolean> = _night
 
     /** 在线书源 key（设置页可切换）。 */
-    private val _sourceKey = MutableStateFlow("kunnu8")
+    private val _sourceKey = MutableStateFlow("gutenberg-zh")
     val sourceKey: StateFlow<String> = _sourceKey
 
     val onlineSource: CategorizedBookSource

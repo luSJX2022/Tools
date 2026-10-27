@@ -20,6 +20,7 @@ import com.qzkt.timetable.jw.qz.QzJsxsdAdapter
 import com.qzkt.timetable.jw.qz.QzJsxsdAutoLogin
 import com.qzkt.timetable.jw.qz.QzJsxsdDirect
 import com.qzkt.timetable.jw.qz.QzWebParser
+import com.qzkt.timetable.yxy.clearYxyPluginData
 import com.qzkt.timetable.sync.SyncScheduler
 import com.qzkt.timetable.widget.TimetableWidgetUpdater
 import kotlinx.coroutines.Dispatchers
@@ -340,6 +341,83 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         TimetableWidgetUpdater.refresh(container.appContext)
     }
 
+    fun installPlugin(key: String) = viewModelScope.launch {
+        if (key !in AppSettings.DEFAULT_TOOL_ORDER) {
+            _uiState.value = _uiState.value.copy(message = "未知插件：$key", messageIsError = true)
+            return@launch
+        }
+        runCatching {
+            container.settingsStore.update { it.withPluginInstalled(key) }
+            if (key == "academic") {
+                val settings = container.settingsStore.current()
+                if (settings.configured && settings.syncEnabled) {
+                    SyncScheduler.schedule(container.appContext, settings.syncIntervalMinutes)
+                }
+                container.classReminders.rescheduleUpcoming()
+            }
+        }.onSuccess {
+            _uiState.value = _uiState.value.copy(message = "插件已安装", messageIsError = false)
+        }.onFailure { error ->
+            _uiState.value = _uiState.value.copy(
+                message = "安装插件失败：${error.message ?: error}",
+                messageIsError = true,
+            )
+        }
+    }
+
+    fun uninstallPlugin(key: String, clearData: Boolean) = viewModelScope.launch {
+        if (key !in AppSettings.DEFAULT_TOOL_ORDER) {
+            _uiState.value = _uiState.value.copy(message = "未知插件：$key", messageIsError = true)
+            return@launch
+        }
+        runCatching {
+            if (clearData) clearPluginData(key)
+            container.settingsStore.update { it.withPluginUninstalled(key) }
+            if (key == "academic") {
+                SyncScheduler.cancel(container.appContext)
+                container.classReminders.cancel()
+                if (clearData) TimetableWidgetUpdater.refresh(container.appContext)
+            }
+        }.onSuccess {
+            val message = if (clearData) "插件已卸载，本地数据已清除" else "插件已卸载，本地数据已保留"
+            _uiState.value = _uiState.value.copy(message = message, messageIsError = false)
+        }.onFailure { error ->
+            _uiState.value = _uiState.value.copy(
+                message = "卸载插件失败：${error.message ?: error}",
+                messageIsError = true,
+            )
+        }
+    }
+
+    private suspend fun clearPluginData(key: String) {
+        when (key) {
+            "academic" -> {
+                repository.clearPluginData()
+                container.settingsStore.update { settings ->
+                    settings.copy(
+                        baseUrl = "",
+                        username = "",
+                        password = "",
+                        useWebImport = false,
+                        firstMonday = "",
+                        weekCount = 20,
+                        syncEnabled = false,
+                        configured = false,
+                        sessionCookie = "",
+                        sessionSavedAt = 0,
+                        courseSelectUrl = "",
+                    )
+                }
+            }
+            "book" -> container.bookStore.clearPluginData()
+            "resolve" -> container.resolveHistoryStore.clear()
+            "anime" -> container.animeStore.clearPluginData()
+            "cidaren" -> container.cidarenStore.clearPluginData()
+            "yxy" -> clearYxyPluginData(container.appContext)
+            else -> error("不支持清理该插件的数据：$key")
+        }
+    }
+
     /** 设置「第 1 周周一」：课表要显示具体日期全靠这个锚点。 */
     fun setFirstMonday(isoDate: String) = viewModelScope.launch {
         val current = _settings.value
@@ -395,10 +473,10 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** 下拉刷新 / 定时刷新：只拉当前周和下一周。 */
+    /** 手动刷新整学期；后台定时仍按当前周和下一周轻量刷新。 */
     fun refresh() = viewModelScope.launch {
-        _uiState.value = MainUiState(busy = true, busyLabel = "正在同步…")
-        val report = container.syncEngine.refresh()
+        _uiState.value = MainUiState(busy = true, busyLabel = "正在同步本学期课表…")
+        val report = container.syncEngine.refreshAll()
 
         if (report == null) {
             // 课表是应用内登录导进来的，但会话没了：提示重新登录，别报"同步失败"吓人

@@ -13,9 +13,7 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 
-     从 media3-ui 1.11.1 的 exo_player_control_view.xml 复制，唯一改动：
-     把 exo_fullscreen 挪到 exo_settings 前面 —— 全屏按钮要显示在设置齿轮的左边，
-     官方默认顺序是设置在左、全屏在右，和需求相反。
+     从 media3-ui 1.11.1 的 exo_player_control_view.xml 复制，并添加清晰度 / 选集入口。
 -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -78,7 +76,7 @@
           style="@style/ExoStyledControls.Button.Bottom.CC"/>
 
       <!-- 自定义的两个常驻入口：清晰度（文案跟着实际播放的分辨率走，由 PlayerScreen 更新）、
-           选集，都排在全屏按钮左边；点击监听在 PlayerScreen 膨胀后挂。 -->
+           选集；点击监听在 PlayerScreen 膨胀后挂。 -->
       <TextView android:id="@+id/player_quality"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
@@ -108,9 +106,6 @@
           android:textColor="#FFFFFF"
           android:textSize="13sp"
           android:background="?android:attr/selectableItemBackground"/>
-
-      <ImageButton android:id="@+id/exo_fullscreen"
-          style="@style/ExoStyledControls.Button.Bottom.FullScreen"/>
 
       <ImageButton android:id="@+id/exo_settings"
           style="@style/ExoStyledControls.Button.Bottom.Settings"/>
@@ -145,20 +140,6 @@
       android:layout_height="@dimen/exo_styled_progress_layout_height"
       android:layout_gravity="bottom"
       android:layout_marginBottom="@dimen/exo_styled_progress_margin_bottom"/>
-
-  <LinearLayout android:id="@+id/exo_minimal_controls"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      android:layout_gravity="bottom|end"
-      android:layout_marginBottom="@dimen/exo_styled_minimal_controls_margin_bottom"
-      android:orientation="horizontal"
-      android:gravity="center_vertical"
-      android:layoutDirection="ltr">
-
-    <ImageButton android:id="@+id/exo_minimal_fullscreen"
-        style="@style/ExoStyledControls.Button.Bottom.FullScreen"/>
-
-  </LinearLayout>
 
   <LinearLayout
       android:id="@+id/exo_center_controls"

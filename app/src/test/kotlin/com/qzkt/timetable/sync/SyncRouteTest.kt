@@ -31,4 +31,20 @@ class SyncRouteTest {
         // 只能提示用户重新登录一次
         assertEquals(SyncRoute.UNAVAILABLE, chooseRoute(hasSession = false, useWebImport = true))
     }
+
+    @Test
+    fun `手动刷新覆盖整个学期周次`() {
+        assertEquals((1..20).toList(), weeksToRefresh(currentWeek = 8, weekCount = 20, fullTerm = true))
+    }
+
+    @Test
+    fun `后台刷新只覆盖当前周和下一周`() {
+        assertEquals(listOf(8, 9), weeksToRefresh(currentWeek = 8, weekCount = 20, fullTerm = false))
+        assertEquals(listOf(20), weeksToRefresh(currentWeek = 20, weekCount = 20, fullTerm = false))
+    }
+
+    @Test
+    fun `无效周次不伪报后台刷新成功`() {
+        assertEquals(emptyList<Int>(), weeksToRefresh(currentWeek = 0, weekCount = 20, fullTerm = false))
+    }
 }

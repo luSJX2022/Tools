@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.qzkt.timetable.data.anime.AnimeDetail
 import com.qzkt.timetable.data.anime.AnimeFavorite
+import com.qzkt.timetable.data.anime.AnimeSynopsisSource
 
 /**
  * 番剧详情：封面 + 简介 + 收藏 + 剧集列表。
@@ -218,8 +219,17 @@ private fun DetailContent(
             }
         }
 
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = when (detail.synopsisSource) {
+                AnimeSynopsisSource.DOUBAN -> "豆瓣简介"
+                AnimeSynopsisSource.SOURCE_FALLBACK -> "豆瓣简介暂不可用，以下为资源站简介"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (detail.content.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = detail.content,
                 style = MaterialTheme.typography.bodyMedium,
@@ -231,6 +241,12 @@ private fun DetailContent(
             TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(vertical = 0.dp)) {
                 Text(if (expanded) "收起" else "展开")
             }
+        } else if (detail.synopsisSource == AnimeSynopsisSource.SOURCE_FALLBACK) {
+            Text(
+                text = "资源站也没有提供简介",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         Spacer(Modifier.height(6.dp))

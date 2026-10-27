@@ -2,6 +2,7 @@ package com.qzkt.timetable.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -44,13 +45,9 @@ fun QzktTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val dark = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val dark = rememberIsDarkTheme(themeMode)
 
-    val scheme = when {
+    val baseScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -60,5 +57,37 @@ fun QzktTheme(
         else -> LightColors
     }
 
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = baseScheme.withGlassSurfaces(dark), content = content)
+}
+
+private fun ColorScheme.withGlassSurfaces(dark: Boolean): ColorScheme {
+    val tint = if (dark) Color(0xFF142235) else Color(0xFFEAF2FF)
+    val glass = tint.copy(alpha = if (dark) 0.76f else 0.72f)
+    val glassSoft = tint.copy(alpha = if (dark) 0.62f else 0.64f)
+    val glassStrong = tint.copy(alpha = if (dark) 0.86f else 0.84f)
+    return copy(
+        background = Color.Transparent,
+        surface = glass,
+        surfaceVariant = glassSoft,
+        surfaceDim = tint.copy(alpha = if (dark) 0.80f else 0.68f),
+        surfaceBright = glassStrong,
+        surfaceContainerLowest = tint.copy(alpha = if (dark) 0.48f else 0.48f),
+        surfaceContainerLow = glassSoft,
+        surfaceContainer = glass,
+        surfaceContainerHigh = glassStrong,
+        surfaceContainerHighest = tint.copy(alpha = if (dark) 0.92f else 0.92f),
+    )
+}
+
+/**
+ * 主题模式 → 当前是不是深色。
+ *
+ * QzktTheme 用它挑配色；内嵌的网页（词达人解析）也用它决定网页的浅色 / 深色，
+ * 这样「主题由 Tools 统一设置」只有一处判断。
+ */
+@Composable
+fun rememberIsDarkTheme(themeMode: ThemeMode): Boolean = when (themeMode) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
 }

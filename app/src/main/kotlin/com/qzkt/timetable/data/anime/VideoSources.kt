@@ -17,6 +17,9 @@ data class AnimePage(
 /** 影视源：把「分类列表 / 搜索 / 详情」翻译成统一的模型，UI 只认这个接口。 */
 interface AnimeSource {
     val key: String
+    val name: String
+    val categories: List<Pair<String, String>>
+    val endpointLabel: String
     /** 分类下的分页列表。 */
     suspend fun list(categoryId: String, page: Int): AnimePage
     suspend fun search(keyword: String, page: Int): AnimePage
@@ -38,16 +41,18 @@ interface AnimeSource {
 class MacCmsSource(
     override val key: String,
     /** 展示名（设置页选源用）。 */
-    val name: String,
+    override val name: String,
     val baseUrl: String,
     /** 页签显示名 to 接口的 type_id（可逗号分隔多个）。 */
-    val categories: List<Pair<String, String>>,
+    override val categories: List<Pair<String, String>>,
 ) : AnimeSource {
+    override val endpointLabel: String get() = baseUrl
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+    private val doubanSynopsisClient = DoubanSynopsisClient()
 
     override suspend fun list(categoryId: String, page: Int): AnimePage =
         fetchPage("$baseUrl/api.php/provide/vod/?ac=videolist&t=$categoryId&pg=${page.coerceAtLeast(1)}")
@@ -59,6 +64,20 @@ class MacCmsSource(
         val json = requestJson("$baseUrl/api.php/provide/vod/?ac=videolist&ids=$id")
         val item = json.optJSONArray("list")?.optJSONObject(0)
             ?: error("没有这部影片（id=$id）")
+        val sourceSynopsis = stripHtml(item.optString("vod_content"))
+        val doubanSynopsis = try {
+            doubanSynopsisClient.synopsis(
+                title = item.optString("vod_name").trim(),
+                year = item.optString("vod_year").trim(),
+                doubanId = item.optString("vod_douban_id").ifBlank {
+                    item.optString("vod_douban")
+                },
+            )
+        } catch (_: java.io.IOException) {
+            null
+        } catch (_: org.json.JSONException) {
+            null
+        }
         AnimeDetail(
             source = key,
             id = item.optLong("vod_id", -1).let { if (it > 0) it.toString() else id },
@@ -68,7 +87,12 @@ class MacCmsSource(
             year = item.optString("vod_year").trim(),
             area = item.optString("vod_area").trim(),
             genre = item.optString("vod_class").trim(),
-            content = stripHtml(item.optString("vod_content")),
+            content = doubanSynopsis ?: sourceSynopsis,
+            synopsisSource = if (doubanSynopsis != null) {
+                AnimeSynopsisSource.DOUBAN
+            } else {
+                AnimeSynopsisSource.SOURCE_FALLBACK
+            },
             episodes = parseEpisodes(
                 item.optString("vod_play_from"),
                 item.optString("vod_play_url"),
@@ -138,13 +162,13 @@ class MacCmsSource(
 }
 
 /**
- * 内置影视源。type_id 按 2026-10 实测的各源 class 数组写死；
+ * 内置苹果 CMS 影视源。type_id 按 2026-10 实测的各源 class 数组写死；
  * 「电影」「剧集」等聚合页签用逗号拼接叶子分类（已剔除伦理/理论这类）。
  * 某个源失效时可在设置页换源，也可以把它的条目从 [all] 里删掉。
  */
 object VideoSources {
 
-    val all: List<MacCmsSource> = listOf(
+    val all: List<AnimeSource> = listOf(
         MacCmsSource(
             key = "bfzy",
             name = "暴风资源",
@@ -193,7 +217,8 @@ object VideoSources {
                 "短剧" to "36",
             ),
         ),
+        InternetArchiveSource(),
     )
 
-    fun byKey(key: String): MacCmsSource = all.firstOrNull { it.key == key } ?: all.first()
+    fun byKey(key: String): AnimeSource = all.firstOrNull { it.key == key } ?: all.first()
 }

@@ -52,6 +52,14 @@ class TimetableStore(private val dir: File) {
     fun saveDiagnostics(exchanges: List<RawExchange>) =
         write(diagnosticsFile, exchangeListSerializer, exchanges.take(MAX_EXCHANGES))
 
+    fun clearAuxiliaryData() {
+        listOf(diagnosticsFile, rawPageFile).forEach { file ->
+            if (file.exists() && !file.delete()) {
+                throw IllegalStateException("无法删除教务诊断数据：${file.name}")
+            }
+        }
+    }
+
     private fun <T> read(file: File, serializer: KSerializer<T>): T? {
         if (!file.exists()) return null
         return runCatching { json.decodeFromString(serializer, file.readText()) }.getOrNull()

@@ -62,6 +62,27 @@ class TimetableRepositoryTest {
     }
 
     @Test
+    fun `课程教室跨周变化时分别保留每周教室`() {
+        repository.applyWeek(1, listOf(math(room = "3#A201")))
+        repository.applyWeek(2, listOf(math(room = "3#A315")))
+
+        val sessions = repository.snapshot.value.sessions
+        assertEquals(2, sessions.size)
+        assertEquals("3#A201", sessions.single { 1 in it.weeks }.room)
+        assertEquals("3#A315", sessions.single { 2 in it.weeks }.room)
+    }
+
+    @Test
+    fun `同一教室的课程仍合并周次`() {
+        repository.applyWeek(1, listOf(math(room = "3#A315")))
+        repository.applyWeek(2, listOf(math(room = "3#A315")))
+
+        val session = repository.snapshot.value.sessions.single()
+        assertEquals("3#A315", session.room)
+        assertEquals(listOf(1, 2), session.weeks)
+    }
+
+    @Test
     fun `查询某一周的课`() {
         repository.applyWeek(1, listOf(math(), physics()))
         repository.applyWeek(2, listOf(physics()))

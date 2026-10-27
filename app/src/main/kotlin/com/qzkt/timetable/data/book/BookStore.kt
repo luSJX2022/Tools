@@ -21,8 +21,8 @@ private val Context.bookDataStore: DataStore<Preferences> by preferencesDataStor
 
 @Serializable
 private data class BookStoreData(
-    /** 选中的在线书源 key（对应 BookSources.byKey）。默认鲲弩（国内手机可达）。 */
-    val sourceKey: String = "kunnu8",
+    /** 选中的在线书源 key（对应 BookSources.byKey）。 */
+    val sourceKey: String = "gutenberg-zh",
     val books: List<Book> = emptyList(),
     /** 阅读页正文字号（sp），全库共用。 */
     val readerFontSize: Int = 18,
@@ -62,11 +62,7 @@ class BookStore(private val context: Context) {
 
     private val data: Flow<BookStoreData> = context.bookDataStore.data
         .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            prefs[booksKey]?.let { raw ->
-                runCatching { json.decodeFromString(BookStoreData.serializer(), raw) }.getOrNull()
-            } ?: BookStoreData()
-        }
+        .map { prefs -> decode(prefs[booksKey]) }
 
     /** 书架，最新导入的在前。 */
     val books: Flow<List<Book>> = data.map { it.books.sortedByDescending { b -> b.addedAt } }
@@ -194,6 +190,11 @@ class BookStore(private val context: Context) {
         }
     }
 
+    /** Remove all bookshelf metadata and preferences; imported files remain in their original locations. */
+    suspend fun clearPluginData() {
+        context.bookDataStore.edit { it.clear() }
+    }
+
     /** 备份恢复：整体替换书架、书源选择和阅读偏好（进度在 books 里一并回来）。 */
     suspend fun restore(
         sourceKey: String?,
@@ -215,7 +216,12 @@ class BookStore(private val context: Context) {
         }
     }
 
-    private fun decode(raw: String?): BookStoreData =
-        raw?.let { runCatching { json.decodeFromString(BookStoreData.serializer(), it) }.getOrNull() }
+    private fun decode(raw: String?): BookStoreData {
+        val stored = raw?.let { runCatching { json.decodeFromString(BookStoreData.serializer(), it) }.getOrNull() }
             ?: BookStoreData()
+        return stored.copy(sourceKey = normalizeBookSourceKey(stored.sourceKey))
+    }
 }
+
+internal fun normalizeBookSourceKey(key: String): String =
+    if (key == "kunnu8") "gutenberg-zh" else key

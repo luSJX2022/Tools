@@ -27,22 +27,31 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -58,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.Color
@@ -117,6 +127,8 @@ fun PlayerScreen(
     onEpisodeSwitched: (AnimePlayRequest) -> Unit = {},
     /** 一集放完是否自动接着放下一集（设置 → 个性化里开关）。 */
     autoPlayNext: Boolean = false,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     /** 返回封面页（影视详情 / 解析结果）；简介顶部的封面行点下去走这里。 */
     onBack: () -> Unit = {},
 ) {
@@ -370,15 +382,13 @@ fun PlayerScreen(
         onDispose { c.removeListener(listener) }
     }
 
-    // 两个画面（小窗 / 全屏）共用同一套自定义控制条；控制条里的「清晰度 / 选集」
-    // 是常驻按钮，点开对应面板。全屏画面里不出现进全屏的按钮（退出用右上角那个）。
-    fun PlayerView.wireControls(fullscreenButton: Boolean) {
+    // 两个画面（小窗 / 全屏）共用一套控制条；清晰度和选集按钮打开各自的面板。
+    fun PlayerView.wireControls() {
         useController = true
         // 重缓冲/重新准备时保留最后一帧，别闪黑屏
         setKeepContentOnPlayerReset(true)
         findViewById<TextView>(R.id.player_quality)?.setOnClickListener { showQuality = true }
         findViewById<TextView>(R.id.player_episodes)?.setOnClickListener { showEpisodes = true }
-        if (fullscreenButton) setFullscreenButtonClickListener { onFullscreenChange(true) }
     }
 
     // 两个面板必须放在全屏分支之前 —— 全屏分支是提前 return 的，
@@ -391,7 +401,7 @@ fun PlayerScreen(
                 factory = { ctx ->
                     (LayoutInflater.from(ctx).inflate(R.layout.view_player_video, null, false) as PlayerView)
                         .apply {
-                            wireControls(fullscreenButton = false)
+                            wireControls()
                             PlayerGestures(this, activity, { controller }, { gestureHint = it }).attach()
                         }
                 },
@@ -445,35 +455,34 @@ fun PlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
-                actions = {
-                    IconButton(onClick = { downloadCurrent() }, enabled = currentSource != null && !downloading) {
-                        Icon(Icons.Default.Download, contentDescription = "下载到本地")
-                    }
-                },
             )
         },
     ) { padding ->
         // 横屏时这一列放不下，能滚才不至于把下面的按钮推出屏幕外
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState()),
         ) {
-            // 视频画面：比原来 260dp 更大，留出控制条空间
-            Box(
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp),
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 104.dp),
             ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f),
+                ) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         // 从 XML 而不是代码 new：要带上自定义控制条 view_player_controls.xml，
-                        // 全屏按钮得排在设置齿轮左边
+                        // 让视频表面可被 Compose 选集 / 清晰度面板覆盖
                         (LayoutInflater.from(ctx).inflate(R.layout.view_player_video, null, false) as PlayerView)
                             .apply {
-                                wireControls(fullscreenButton = true)
+                                wireControls()
                                 setShowNextButton(false)
                                 setShowPreviousButton(false)
                                 PlayerGestures(this, activity, { controller }, { gestureHint = it }).attach()
@@ -502,23 +511,59 @@ fun PlayerScreen(
                     )
                 }
                 gestureHint?.let { hint -> GestureHintOverlay(hint, Modifier.matchParentSize()) }
-            }
+                }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // 没找到同名歌词时整块收起来，别占地方
-            if (lyrics.isNotEmpty()) LyricsPanel(lines = lyrics, index = lyricIndex)
+                animeSession?.let { session ->
+                    Text(
+                        text = session.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+                    )
+                    val currentEpisode = session.episodes.getOrNull(session.currentIndex)
+                    if (currentEpisode != null) {
+                        Text(
+                            text = "正在播放  ${currentEpisode.label}  ·  共 ${session.episodes.size} 集",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 18.dp),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            session.episodes.forEachIndexed { index, episode ->
+                                FilterChip(
+                                    selected = index == session.currentIndex,
+                                    onClick = { playEpisode(index) },
+                                    label = { Text(episode.label, maxLines = 1) },
+                                )
+                            }
+                        }
+                    }
+                }
 
-            lastError?.let { message ->
+                // 没找到同名歌词时整块收起来，别占地方
+                if (lyrics.isNotEmpty()) LyricsPanel(lines = lyrics, index = lyricIndex)
+
+                lastError?.let { message ->
                 Text(
                     text = "播放失败：$message",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
-            }
+                }
 
-            if (downloading) {
+                if (downloading) {
                 val progress = downloadProgress
                 if (progress != null && progress >= 0f) {
                     LinearProgressIndicator(
@@ -527,20 +572,20 @@ fun PlayerScreen(
                     )
                 } else {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                }
+                    }
             }
 
-            downloadStatus?.let { status ->
+                downloadStatus?.let { status ->
                 Text(
                     text = status,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 )
-            }
+                }
 
             // 解析 / 选集跳过来时的作品简介（保存在 savedDescription，不随 playRequest 消费而消失）
-            savedDescription?.takeIf { it.isNotBlank() }?.let { description ->
+                savedDescription?.takeIf { it.isNotBlank() }?.let { description ->
                 Spacer(Modifier.height(12.dp))
 
                 // 简介顶部：封面 + 片名，点一下返回封面页（影视详情 / 解析结果）
@@ -608,7 +653,95 @@ fun PlayerScreen(
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
+            }
+
+            FloatingPlayerActions(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                isFavorite = isFavorite,
+                canFavorite = !animeSession?.id.isNullOrBlank(),
+                canSelectEpisode = !animeSession?.episodes.isNullOrEmpty(),
+                canDownload = currentSource != null && !downloading,
+                onDownload = { downloadCurrent() },
+                onFavorite = onToggleFavorite,
+                onEpisodes = { showEpisodes = true },
+                onFullscreen = { onFullscreenChange(true) },
+            )
         }
+    }
+}
+
+@Composable
+private fun FloatingPlayerActions(
+    modifier: Modifier = Modifier,
+    isFavorite: Boolean,
+    canFavorite: Boolean,
+    canSelectEpisode: Boolean,
+    canDownload: Boolean,
+    onDownload: () -> Unit,
+    onFavorite: () -> Unit,
+    onEpisodes: () -> Unit,
+    onFullscreen: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.shadow(12.dp, RoundedCornerShape(28.dp)),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
+        tonalElevation = 4.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlayerAction(Icons.Default.Download, "下载", canDownload, onDownload)
+            if (canFavorite) {
+                PlayerAction(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    if (isFavorite) "已收藏" else "收藏",
+                    true,
+                    onFavorite,
+                )
+            }
+            PlayerAction(Icons.AutoMirrored.Filled.PlaylistPlay, "选集", canSelectEpisode, onEpisodes)
+            PlayerAction(Icons.Default.Fullscreen, "全屏", true, onFullscreen)
+        }
+    }
+}
+
+@Composable
+private fun PlayerAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (enabled) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+            modifier = Modifier.size(23.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+        )
     }
 }
 

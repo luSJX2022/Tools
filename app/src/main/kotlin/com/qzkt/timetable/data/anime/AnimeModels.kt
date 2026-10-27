@@ -21,6 +21,11 @@ data class Episode(
     val url: String,
 )
 
+enum class AnimeSynopsisSource {
+    DOUBAN,
+    SOURCE_FALLBACK,
+}
+
 /** 详情页完整数据（含剧集列表）。 */
 data class AnimeDetail(
     val source: String,
@@ -33,6 +38,7 @@ data class AnimeDetail(
     val genre: String = "",
     /** 简介（已去掉 HTML 标签）。 */
     val content: String = "",
+    val synopsisSource: AnimeSynopsisSource = AnimeSynopsisSource.SOURCE_FALLBACK,
     val episodes: List<Episode> = emptyList(),
 )
 

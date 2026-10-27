@@ -8,6 +8,9 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** 在线书源：搜书 / 目录 / 正文。 */
@@ -249,6 +252,172 @@ class GutenbergChineseSource(
         }
 }
 
+/**
+ * Chinese Wikisource: texts published under an open license or in the public domain.
+ * The MediaWiki API provides search, category browsing, section navigation, and HTML text.
+ */
+class WikisourceChineseSource(
+        private val client: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build(),
+        private val apiUrl: String = "https://zh.wikisource.org/w/api.php",
+        private val siteUrl: String = "https://zh.wikisource.org",
+) : BookSource, CategorizedBookSource {
+
+        override val key = "wikisource-zh"
+        override val name = "维基文库（中文）"
+        override val categories = listOf(
+            "四大名著" to "四大名著",
+            "唐诗三百首" to "唐诗三百首",
+            "宋词" to "宋词",
+        )
+
+        override suspend fun search(keyword: String): List<OnlineBook> = withContext(Dispatchers.IO) {
+            require(keyword.isNotBlank()) { "请输入书名或作者" }
+            val response = getJson(
+                mapOf(
+                    "action" to "query",
+                    "list" to "search",
+                    "srsearch" to keyword.trim(),
+                    "srnamespace" to "0",
+                    "srlimit" to "30",
+                    "format" to "json",
+                    "formatversion" to "2",
+                ),
+            )
+            val results = response.optJSONObject("query")?.optJSONArray("search") ?: JSONArray()
+            (0 until results.length()).mapNotNull { index ->
+                val item = results.optJSONObject(index) ?: return@mapNotNull null
+                item.optString("title").takeIf(String::isNotBlank)?.let(::toBook)
+            }
+        }
+
+        override suspend fun categoryBooks(categoryId: String, page: Int): OnlineBookPage =
+            withContext(Dispatchers.IO) {
+                require(categories.any { it.second == categoryId }) { "未知分类" }
+                require(page >= 1) { "页码无效" }
+                val params = mutableMapOf(
+                    "action" to "query",
+                    "list" to "categorymembers",
+                    "cmtitle" to "Category:$categoryId",
+                    "cmtype" to "page",
+                    "cmnamespace" to "0",
+                    "cmlimit" to "30",
+                    "format" to "json",
+                    "formatversion" to "2",
+                )
+                if (page > 1) {
+                    params["cmcontinue"] = categoryContinuation[categoryId to page]
+                        ?: error("请从第一页开始浏览分类")
+                }
+                val response = getJson(
+                    params,
+                )
+                val query = response.optJSONObject("query") ?: error("维基文库分类响应异常")
+                val members = query.optJSONArray("categorymembers") ?: JSONArray()
+                val books = (0 until members.length()).mapNotNull { index ->
+                    val title = members.optJSONObject(index)?.optString("title").orEmpty()
+                    title.takeIf(String::isNotBlank)?.let(::toBook)
+                }
+                val continuation = response.optJSONObject("continue")?.optString("cmcontinue").orEmpty()
+                if (continuation.isNotBlank()) {
+                    categoryContinuation[categoryId to (page + 1)] = continuation
+                } else {
+                    categoryContinuation.remove(categoryId to (page + 1))
+                }
+                OnlineBookPage(books, continuation.isNotBlank())
+            }
+
+        override suspend fun catalog(bookUrl: String): List<OnlineChapter> = withContext(Dispatchers.IO) {
+            val title = pageTitle(bookUrl)
+            val response = getJson(
+                mapOf(
+                    "action" to "parse",
+                    "page" to title,
+                    "prop" to "sections",
+                    "format" to "json",
+                    "formatversion" to "2",
+                ),
+            )
+            parseWikisourceSections(response, bookUrl)
+        }
+
+        override suspend fun content(chapter: OnlineChapter): String = withContext(Dispatchers.IO) {
+            val title = pageTitle(chapter.url)
+            val section = Uri.parse(chapter.url).getQueryParameter("section")
+            val params = mutableMapOf(
+                "action" to "parse",
+                "page" to title,
+                "prop" to "text",
+                "format" to "json",
+                "formatversion" to "2",
+            )
+            if (!section.isNullOrBlank()) params["section"] = section
+            val response = getJson(params)
+            val html = response.optJSONObject("parse")?.optString("text").orEmpty()
+            extractWikisourceText(html).ifBlank { error("正文为空（页面可能暂不可读）") }
+        }
+
+        private fun toBook(title: String) = OnlineBook(
+            sourceKey = key,
+            bookUrl = "$siteUrl/wiki/${encodeWikisourceComponent(title.replace(' ', '_'))}",
+            name = title,
+        )
+
+        private fun pageTitle(url: String): String {
+            val uri = Uri.parse(url)
+            require(uri.scheme == "https" && uri.host == "zh.wikisource.org") { "维基文库链接无效" }
+            val page = uri.pathSegments.lastOrNull()?.takeIf { uri.pathSegments.firstOrNull() == "wiki" }
+                ?: error("维基文库页面链接无效")
+            return Uri.decode(page).replace('_', ' ')
+        }
+
+        private val categoryContinuation = ConcurrentHashMap<Pair<String, Int>, String>()
+
+        private fun getJson(params: Map<String, String>): JSONObject {
+            val query = params.entries.joinToString("&") { (key, value) ->
+                "${encodeWikisourceComponent(key)}=${encodeWikisourceComponent(value)}"
+            }
+            return client.newCall(
+                Request.Builder().url("$apiUrl?$query")
+                    .header("User-Agent", "Tools Android app (Wikisource reader)")
+                    .build(),
+            ).execute().use { response ->
+                check(response.isSuccessful) { "HTTP ${response.code}" }
+                JSONObject(response.body?.string() ?: error("维基文库返回空响应")).also { body ->
+                    if (body.has("error")) {
+                        error(body.optJSONObject("error")?.optString("info") ?: "维基文库请求失败")
+                    }
+                }
+            }
+        }
+}
+
+private fun encodeWikisourceComponent(value: String): String =
+    URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
+
+internal fun parseWikisourceSections(response: JSONObject, bookUrl: String): List<OnlineChapter> {
+        val sections = response.optJSONObject("parse")?.optJSONArray("sections") ?: JSONArray()
+        val chapters = (0 until sections.length()).mapNotNull { index ->
+            val section = sections.optJSONObject(index) ?: return@mapNotNull null
+            val sectionIndex = section.optString("index").takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val title = section.optString("line").trim().ifBlank { "正文" }
+            OnlineChapter(title, "$bookUrl?section=${encodeWikisourceComponent(sectionIndex)}")
+        }
+        return chapters.ifEmpty { listOf(OnlineChapter("全文", bookUrl)) }
+}
+
+internal fun extractWikisourceText(html: String): String {
+        val doc = Jsoup.parse(html)
+        doc.select(
+            ".mw-editsection, .noprint, #toc, .catlinks, .navbox, .metadata, " +
+                ".mw-references-wrap, .references, script, style",
+        ).remove()
+        val content = doc.selectFirst(".mw-parser-output") ?: doc.body()
+        return content.textWithBreaks().trim()
+}
+
 internal data class GutenbergBookPage(val books: List<OnlineBook>, val hasNext: Boolean)
 
 internal fun parseGutenbergBookPage(body: String): GutenbergBookPage {
@@ -288,7 +457,12 @@ internal fun extractGutenbergText(html: String): String {
 /** 内置在线书源。 */
 object BookSources {
 
-    val all: List<BookSource> = listOf(Quanben5Source(), Kunnu8Source(), GutenbergChineseSource())
+    val all: List<BookSource> = listOf(
+        Quanben5Source(),
+        Kunnu8Source(),
+        GutenbergChineseSource(),
+        WikisourceChineseSource(),
+    )
 
     fun byKey(key: String): BookSource = all.firstOrNull { it.key == key } ?: all.first()
 

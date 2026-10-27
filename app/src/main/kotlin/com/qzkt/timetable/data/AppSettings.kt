@@ -35,7 +35,7 @@ data class AppSettings(
     /** 番剧一集放完是否自动接着放下一集。 */
     val autoPlayNext: Boolean = true,
     /**
-     * 工具页（首页）要隐藏的入口 key：`timetable` / `book` / `resolve` / `anime`。
+     * 工具页（首页）要隐藏的入口 key：`academic` / `book` / `resolve` / `anime` / `cidaren` / `yxy`。
      *
      * 存「隐藏」而不是「显示」：列表缺省为空，老版本存的 JSON 没这个字段，
      * 反序列化出来自然等于全显示，不用做迁移。
@@ -46,6 +46,8 @@ data class AppSettings(
      * 缺省/老版本数据为空，[displayToolOrder] 会退回默认顺序。
      */
     val toolOrder: List<String> = emptyList(),
+    /** Installed tools in the in-app plugin manager. Missing on older installs means all are installed. */
+    val installedToolKeys: List<String> = DEFAULT_TOOL_ORDER,
     /** 是否已完成首次配置。 */
     val configured: Boolean = false,
     /**
@@ -70,9 +72,26 @@ data class AppSettings(
     /** 会话已经存下来了（能支撑后台自动同步）。 */
     val hasSession: Boolean get() = sessionCookie.isNotBlank()
 
+    fun withPluginInstalled(key: String): AppSettings {
+        require(key in DEFAULT_TOOL_ORDER) { "Unknown tool plugin: $key" }
+        val installed = normalizeInstalledToolKeys(installedToolKeys)
+        return copy(
+            installedToolKeys = if (key in installed) installed else installed + key,
+            hiddenToolKeys = hiddenToolKeys - key,
+        )
+    }
+
+    fun withPluginUninstalled(key: String): AppSettings {
+        require(key in DEFAULT_TOOL_ORDER) { "Unknown tool plugin: $key" }
+        return copy(
+            installedToolKeys = normalizeInstalledToolKeys(installedToolKeys).filterNot { it == key },
+            hiddenToolKeys = hiddenToolKeys - key,
+        )
+    }
+
     companion object {
         /** 工具页全部入口 key 的默认顺序。 */
-        val DEFAULT_TOOL_ORDER: List<String> = listOf("academic", "book", "resolve", "anime")
+        val DEFAULT_TOOL_ORDER: List<String> = listOf("academic", "book", "resolve", "anime", "cidaren", "yxy")
 
         /**
          * 把存的 toolOrder 清洗成可显示顺序：丢掉已下线的 key、
@@ -82,6 +101,14 @@ data class AppSettings(
         fun displayToolOrder(saved: List<String>): List<String> {
             val known = saved.filter { it in DEFAULT_TOOL_ORDER }
             return known + (DEFAULT_TOOL_ORDER - known.toSet())
+        }
+
+        fun normalizeInstalledToolKeys(saved: List<String>): List<String> =
+            saved.filter { it in DEFAULT_TOOL_ORDER }.distinct()
+
+        fun displayInstalledToolOrder(order: List<String>, installed: List<String>): List<String> {
+            val installedKeys = normalizeInstalledToolKeys(installed).toSet()
+            return displayToolOrder(order).filter { it in installedKeys }
         }
 
         /**

@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.decodeFromString
 
 /**
  * 作息时间表。
@@ -79,9 +81,47 @@ class AppSettingsSlotsTest {
     fun `toolOrder 丢掉下线 key 并补上新增入口`() {
         val saved = listOf("anime", "ghost", "timetable")
         val order = AppSettings.displayToolOrder(saved)
-        // 下线的 ghost 和被教务收编的 timetable 被丢掉，剩下的按存的顺序，新增的 academic/book/resolve 排到末尾
-        assertEquals(listOf("anime", "academic", "book", "resolve"), order)
+        // 下线的 ghost 和被教务收编的 timetable 被丢掉，剩下的按存的顺序，新入口排到末尾
+        assertEquals(listOf("anime", "academic", "book", "resolve", "cidaren", "yxy"), order)
         // 结果一定是全量 key，不漏不重
         assertEquals(AppSettings.DEFAULT_TOOL_ORDER.toSet(), order.toSet())
+    }
+
+    @Test
+    fun `旧设置升级后默认保留所有插件`() {
+        val oldSettings = Json.decodeFromString<AppSettings>("""{"configured":true}""")
+        assertEquals(AppSettings.DEFAULT_TOOL_ORDER, oldSettings.installedToolKeys)
+    }
+
+    @Test
+    fun `插件目录过滤未知项并按首页顺序显示已安装插件`() {
+        val installed = AppSettings.normalizeInstalledToolKeys(listOf("anime", "ghost", "book", "anime"))
+
+        assertEquals(listOf("anime", "book"), installed)
+        assertEquals(
+            listOf("book", "anime"),
+            AppSettings.displayInstalledToolOrder(
+                order = listOf("book", "resolve", "anime"),
+                installed = installed,
+            ),
+        )
+    }
+
+    @Test
+    fun `插件卸载后保留其他设置且可重新安装`() {
+        val original = AppSettings(
+            installedToolKeys = AppSettings.DEFAULT_TOOL_ORDER,
+            hiddenToolKeys = listOf("anime"),
+            username = "keep-me",
+        )
+
+        val uninstalled = original.withPluginUninstalled("anime")
+        assertTrue("anime" !in uninstalled.installedToolKeys)
+        assertTrue("anime" !in uninstalled.hiddenToolKeys)
+        assertEquals("keep-me", uninstalled.username)
+
+        val reinstalled = uninstalled.withPluginInstalled("anime")
+        assertTrue("anime" in reinstalled.installedToolKeys)
+        assertEquals(original.username, reinstalled.username)
     }
 }

@@ -1,39 +1,45 @@
 {
   "schema_version": "mimosa-task-review/v2",
-  "run_id": "20261005T000713480Z-9880-c3d39504af4b",
-  "run_status": "completed",
-  "errors": [],
+  "run_id": "20261007T050044458Z-21788-1b26cdf04ad2",
+  "run_status": "inconclusive",
+  "errors": [
+    {
+      "stage": "baseline",
+      "target": ".",
+      "reason": "baseline_partial: baseline capture had enumeration or snapshot errors"
+    }
+  ],
   "coverage": {
     "schema_version": "mimosa-hook-coverage/v1",
-    "status": "complete",
+    "status": "partial",
     "scope": "hook_observed_diff",
     "baseline": {
-      "complete": true,
-      "captured_files": 117,
+      "complete": false,
+      "captured_files": 5,
       "candidate_limit": 5000,
       "truncated": false,
       "enumeration_error_count": 0,
       "snapshot_error_count": 0,
-      "compensated_target_count": 3
+      "compensated_target_count": 5
     },
     "change_tracking": {
-      "touched_observed": 3,
-      "touched_retained": 3,
+      "touched_observed": 5,
+      "touched_retained": 5,
       "truncated": false,
       "bash_mutation": true,
-      "bash_discovered": 3,
+      "bash_discovered": 5,
       "bash_discovery_limit": 80,
       "bash_discovery_truncated": false
     },
     "candidates": {
-      "eligible_files": 3,
-      "selected_files": 3,
+      "eligible_files": 5,
+      "selected_files": 5,
       "limit": 20,
       "truncated": false
     },
     "scanning": {
-      "required_files": 3,
-      "scanned_files": 3,
+      "required_files": 5,
+      "scanned_files": 5,
       "skipped_files": 0,
       "failed_files": 0,
       "project_checks_required": 1,
@@ -45,19 +51,37 @@
       "detail_limit": 3,
       "truncated": false
     },
-    "reason_counts": {},
-    "reasons": [],
+    "reason_counts": {
+      "baseline_partial": 1,
+      "project_check_failed": 1
+    },
+    "reasons": [
+      {
+        "code": "baseline_partial",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline capture had enumeration or snapshot errors",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline_partial: baseline capture had enumeration or snapshot errors",
+        "affects_completion": true
+      }
+    ],
     "reasons_truncated": false
   },
-  "generated_at": "2026-10-05T00:07:13.480Z",
+  "generated_at": "2026-10-07T05:00:44.458Z",
   "session_id": "sess_89322dca-5737-430a-be58-8ce9097b927c",
   "target": ".",
-  "revision": "1265e82adcdccbe5ba8b4cd1b4a8643742385ed9",
+  "revision": "ca916428530736e4cac9bd6219cc98f2b6d82904",
   "rules_version": "unavailable",
-  "diff_hash": "cbc2b31905002fa078e664a03d7f0174d4fbd3a99cf6075286d93cd9ca09a629",
+  "diff_hash": "fd079f0c50c6bb9ae5b8f2a2e4df54b3b43df494b8b091141ddfa9fed087c665",
   "diff": {
     "algorithm": "sha256",
-    "changed_file_count": 3,
+    "changed_file_count": 5,
     "changed_files": [
       {
         "file": "app/build.gradle.kts",
@@ -67,45 +91,63 @@
             "end": 16
           }
         ],
-        "before_hash": "b8b91b361055afc4faf70da1e393b90b8d360ea6586330f1874935756addfa0e",
-        "after_hash": "76a382a121a9c441bb96c8075eaff7bcc4525ecec5f0d842697a7f6cd049c36f"
+        "before_hash": "470f7ffc7865cbe012628c498aae9c79ef1a015ebfb0e09f1674e3916ad7f728",
+        "after_hash": "6acdf853e78dc11a713c6732abff73dad87db611447d3f04ff8188f37c2b3118"
       },
       {
-        "file": "app/src/main/kotlin/com/qzkt/timetable/ui/grades/GradesScreen.kt",
+        "file": "app/src/main/kotlin/com/qzkt/timetable/data/AppSettings.kt",
         "ranges": [
           {
-            "start": 86,
-            "end": 99
+            "start": 31,
+            "end": 32
           }
         ],
-        "before_hash": "cf7ce725ddbf256f8a512b1ea380ee9b048131ed59d7c275c907e7bcace5e4a8",
-        "after_hash": "99d5f93d332df8fa251f63df0d7d5b465bf658f80446f81f780e251b09221000"
+        "before_hash": "078e8a34e32c41b26542928e0f0355023500cec98f0c21cc7e37721731d7a433",
+        "after_hash": "d8f4394b05fc059180f861c65a54cb8e5f5e1ed55f2693f84318d9e6a5cf8a57"
       },
       {
-        "file": "app/src/main/kotlin/com/qzkt/timetable/ui/grades/GradesViewModel.kt",
+        "file": "app/src/main/kotlin/com/qzkt/timetable/ui/account/AccountScreen.kt",
         "ranges": [
           {
-            "start": 29,
-            "end": 29
+            "start": 144,
+            "end": 157
           },
           {
-            "start": 33,
-            "end": 35
-          },
-          {
-            "start": 37,
-            "end": 37
+            "start": 460,
+            "end": 477
           }
         ],
-        "before_hash": "899b3f5ba3a190f187056a6a1e148f431b93083e7c02c43b1aa376aad2bf1b6d",
-        "after_hash": "896bac3eaaa2702ef6d313f2963906885cad90657c0551070b2522f509f186e5"
+        "before_hash": "5e2f1daf13c1b4714668c1a70aa131415d3cf91f629200db526cab20844140e5",
+        "after_hash": "467f4c42e2a9d5dca09ea3722a6fb7eb5a5ded165b4d46bca75af6906ba0732e"
+      },
+      {
+        "file": "app/src/main/kotlin/com/qzkt/timetable/ui/settings/SettingsScreen.kt",
+        "ranges": [
+          {
+            "start": 123,
+            "end": 124
+          }
+        ],
+        "before_hash": "bc6e4539ba726605934a84ba744543b218885a5114903fa0d2374e6f1491a9b5",
+        "after_hash": "148b534a537b150e2e327feaf65e940b15dc47ed5af8d0de20469b7737120559"
+      },
+      {
+        "file": "app/src/main/kotlin/com/qzkt/timetable/ui/setup/SetupScreen.kt",
+        "ranges": [
+          {
+            "start": 80,
+            "end": 80
+          }
+        ],
+        "before_hash": "3a37ed318349524a22d5861a8b5a505768dd247b2616580d7bb8653b7c2b297a",
+        "after_hash": "4363ae9c6dd5ee33b6cc83fc502f5db15195e3719ba72588745ab5daac9844ca"
       }
     ]
   },
   "timing": {
-    "started_at": "2026-10-05T00:07:11.988Z",
-    "completed_at": "2026-10-05T00:07:13.480Z",
-    "duration_ms": 1492,
+    "started_at": "2026-10-07T05:00:42.561Z",
+    "completed_at": "2026-10-07T05:00:44.458Z",
+    "duration_ms": 1897,
     "measurement": "hook_wall_clock"
   },
   "tokens": {
@@ -119,11 +161,11 @@
     "schemaVersion": "mimosa-gate-telemetry/v1",
     "profile": "gate",
     "operation": "Stop",
-    "outcome": "complete",
-    "latencyMs": 1492,
-    "peakMemoryBytes": 142331904,
+    "outcome": "partial/INCONCLUSIVE",
+    "latencyMs": 1897,
+    "peakMemoryBytes": 142626816,
     "memoryMeasurement": "max-observed-process-rss",
-    "scannedFiles": 3,
+    "scannedFiles": 5,
     "cache": {
       "hits": 0,
       "misses": 0,
@@ -148,8 +190,8 @@
   "finding_events": [],
   "findings": [],
   "artifacts": {
-    "immutable_report": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c-20261005T000713480Z-9880-c3d39504af4b.json",
+    "immutable_report": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c-20261007T050044458Z-21788-1b26cdf04ad2.json",
     "latest_report": ".mimosa/reports/task-review-sess_89322dca-5737-430a-be58-8ce9097b927c.json",
-    "history_summary": ".mimosa/history/run-20261005T000713480Z-9880-c3d39504af4b.json"
+    "history_summary": ".mimosa/history/run-20261007T050044458Z-21788-1b26cdf04ad2.json"
   }
 }

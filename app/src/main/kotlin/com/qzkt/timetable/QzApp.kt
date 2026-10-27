@@ -8,11 +8,13 @@ import com.qzkt.timetable.data.TimetableStore
 import com.qzkt.timetable.data.anime.AnimeStore
 import com.qzkt.timetable.data.backup.BackupManager
 import com.qzkt.timetable.data.book.BookStore
+import com.qzkt.timetable.cidaren.CidarenStore
 import com.qzkt.timetable.jw.JwAdapter
 import com.qzkt.timetable.jw.qz.SmartQzAdapter
 import com.qzkt.timetable.sync.ChangeNotifier
 import com.qzkt.timetable.sync.ClassReminderScheduler
 import com.qzkt.timetable.sync.SyncEngine
+import com.qzkt.timetable.ui.player.link.ResolveHistoryStore
 import java.io.File
 
 /**
@@ -30,6 +32,10 @@ class AppContainer(context: Context) {
     val animeStore = AnimeStore(appContext)
 
     val bookStore = BookStore(appContext)
+
+    val cidarenStore = CidarenStore(appContext)
+
+    val resolveHistoryStore = ResolveHistoryStore(appContext)
 
     /** 设置 + 书架 + 追番的备份恢复（设置页「数据备份」用）。 */
     val backupManager = BackupManager(settingsStore, bookStore, animeStore)

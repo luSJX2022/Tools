@@ -118,6 +118,10 @@ class AnimeStore(private val context: Context) {
         }
     }
 
+    suspend fun clearPluginData() {
+        context.animeDataStore.edit { it.remove(key) }
+    }
+
     suspend fun saveProgress(progress: AnimeProgress) {
         context.animeDataStore.edit { prefs ->
             val existing = decode(prefs[key])

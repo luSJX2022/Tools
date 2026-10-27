@@ -40,10 +40,17 @@ internal fun chooseRoute(hasSession: Boolean, useWebImport: Boolean): SyncRoute 
     else -> SyncRoute.PASSWORD
 }
 
+internal fun weeksToRefresh(currentWeek: Int, weekCount: Int, fullTerm: Boolean): List<Int> {
+    val count = weekCount.coerceIn(1, 40)
+    if (fullTerm) return (1..count).toList()
+    if (currentWeek !in 1..count) return emptyList()
+    return listOf(currentWeek, currentWeek + 1).filter { it in 1..count }
+}
+
 /**
  * 同步引擎：登录教务系统并把课表落到本地。
  *
- * UI 的"导入课表 / 下拉刷新"和后台的 [SyncWorker] 都走这里，保证两边行为一致。
+ * UI 的手动整学期刷新和后台定时轻量刷新共用登录方式选择，按刷新范围采用不同策略。
  */
 class SyncEngine(
     private val settingsStore: SettingsStore,
@@ -65,13 +72,14 @@ class SyncEngine(
 
             // 网页版接口一次就能拿到整学期
             val wholeTerm = runCatching { session.loadWholeTerm() }.getOrNull()
-            val report = if (wholeTerm != null) {
+            val report = if (!wholeTerm.isNullOrEmpty()) {
                 onProgress(weekCount, weekCount)
                 repository.replaceAll(wholeTerm, weekCount = weekCount)
                 SyncReport(true, "导入完成，共 ${wholeTerm.size} 条课程", repository.snapshot.value.sessions.size)
             } else {
                 val failures = mutableListOf<String>()
-                for (week in 1..weekCount) {
+                val weeks = weeksToRefresh(currentWeek = 1, weekCount = weekCount, fullTerm = true)
+                for (week in weeks) {
                     onProgress(week - 1, weekCount)
                     runCatching { session.loadWeek(week) }
                         .onSuccess { repository.applyWeek(week, it) }
@@ -127,16 +135,21 @@ class SyncEngine(
             val total = repository.snapshot.value.sessions.size
 
             val wholeTerm = runCatching { session.loadWholeTerm() }.getOrNull()
-            if (wholeTerm != null) {
+            if (!wholeTerm.isNullOrEmpty()) {
                 repository.replaceAll(wholeTerm, weekCount = weekCount)
                 repository.recordDiagnostics(session.rawLog)
                 return@withContext SyncReport(true, "课表已更新", wholeTerm.size)
             }
 
             val current = term.currentWeek ?: repository.currentWeek(LocalDate.now())
-            val targets = listOf(current, current + 1)
-                .filter { it in 1..weekCount }
-                .distinct()
+            val targets = weeksToRefresh(current, weekCount, fullTerm = false)
+            if (targets.isEmpty()) {
+                return@withContext SyncReport(
+                    false,
+                    "教务系统返回了无效的当前周次（$current），未修改本地课表",
+                    total,
+                )
+            }
 
             val failures = mutableListOf<String>()
             targets.forEach { week ->
@@ -180,9 +193,7 @@ class SyncEngine(
     /**
      * 按当前配置挑同步方式。
      *
-     * **手动刷新和后台定时都必须走这里。** 之前两边各写各的，
-     * 结果"有会话就用会话"只接进了后台，前台刷新还在傻乎乎地用账号密码登录，
-     * 在学校有反自动化校验时必然失败 —— 用户点了刷新却什么也刷不出来。
+     * 后台定时使用当前周和下一周的轻量刷新；手动刷新请用 [refreshAll]。
      *
      * @return null 表示当前没有可用的同步方式（课表来自应用内登录、但会话已经失效），
      *   调用方应当提示用户重新登录，而不是报"同步失败"。
@@ -193,6 +204,19 @@ class SyncEngine(
             SyncRoute.SESSION -> refreshWithSession()
             SyncRoute.UNAVAILABLE -> null
             SyncRoute.PASSWORD -> refreshNearbyWeeks()
+        }
+    }
+
+    /**
+     * 手动刷新使用完整学期数据，避免用户改了较远周次的课程却只刷新当前周和下一周。
+     * 后台定时任务继续使用 [refresh] 的轻量策略，减少请求和限流风险。
+     */
+    suspend fun refreshAll(): SyncReport? {
+        val settings = settingsStore.current()
+        return when (chooseRoute(settings.hasSession, settings.useWebImport)) {
+            SyncRoute.SESSION -> refreshWithSession()
+            SyncRoute.UNAVAILABLE -> null
+            SyncRoute.PASSWORD -> importAll()
         }
     }
 

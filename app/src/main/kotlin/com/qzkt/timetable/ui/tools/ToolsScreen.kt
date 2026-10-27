@@ -10,22 +10,28 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Spellcheck
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -35,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,6 +66,7 @@ private class ToolSpec(
     val icon: ImageVector,
     val title: String,
     val subtitle: () -> String,
+    val clearDataDescription: String,
     val onClick: () -> Unit,
 )
 
@@ -68,8 +76,7 @@ private class ToolSpec(
  * 课表和播放器原先各占一个底部页签，现在收进这里变成两个入口 ——
  * 底部页签只剩「工具」和「设置」，打开 App 先看到工具列表，再进具体功能。
  *
- * 右上角「编辑」进入编辑模式：不用进设置就能改主题样式、
- * 隐藏用不到的入口、上下调整入口顺序（写回 AppSettings，与设置页共享）。
+ * 插件管理可安装/卸载工具；「编辑」模式另负责主题、隐藏入口和排序。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,21 +87,30 @@ fun ToolsScreen(
     configured: Boolean = true,
     /** 被用户在首页「编辑」模式里藏起来的入口 key。 */
     hiddenEntries: Set<String> = emptySet(),
+    installedEntries: Set<String> = AppSettings.DEFAULT_TOOL_ORDER.toSet(),
     /** 入口排列顺序（AppSettings.toolOrder，空表示默认顺序）。 */
     entryOrder: List<String> = emptyList(),
     themeMode: String = "SYSTEM",
     dynamicColor: Boolean = true,
     onUpdate: ((AppSettings) -> AppSettings) -> Unit = {},
+    onInstallPlugin: (String) -> Unit = {},
+    onUninstallPlugin: (String, Boolean) -> Unit = { _, _ -> },
     onOpenAcademic: () -> Unit = {},
     onOpenResolve: () -> Unit = {},
     onOpenBooks: () -> Unit = {},
     onOpenAnime: () -> Unit = {},
+    /** 词达人解析：内置网页版解析器（离线题库 + 免费 AI）。 */
+    onOpenCidaren: () -> Unit = {},
+    onOpenYxy: () -> Unit = {},
 ) {
     val today = remember { LocalDate.now() }
     val currentWeek = remember(snapshot, today) { computeCurrentWeek(snapshot, today) }
 
     var editMode by rememberSaveable { mutableStateOf(false) }
-    val order = remember(entryOrder) { AppSettings.displayToolOrder(entryOrder) }
+    val order = remember(entryOrder, installedEntries) {
+        AppSettings.displayInstalledToolOrder(entryOrder, installedEntries.toList())
+    }
+    var showPluginManager by rememberSaveable { mutableStateOf(false) }
 
     val specs = remember(snapshot, currentWeek, configured, animeFavoriteCount) {
         listOf(
@@ -112,6 +128,7 @@ fun ToolsScreen(
                         }
                     }
                 },
+                clearDataDescription = "课表、账号与登录会话、诊断记录",
                 onClick = onOpenAcademic,
             ),
             ToolSpec(
@@ -119,6 +136,7 @@ fun ToolsScreen(
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 title = "图书",
                 subtitle = { "本地 TXT 小说：书架、进度记忆、夜间模式" },
+                clearDataDescription = "书架与阅读设置；不会删除原位置的 TXT 文件",
                 onClick = onOpenBooks,
             ),
             ToolSpec(
@@ -126,6 +144,7 @@ fun ToolsScreen(
                 icon = Icons.Default.Link,
                 title = "链接解析",
                 subtitle = { "B站 / 抖音分享链接，解析后直接播放" },
+                clearDataDescription = "最近解析历史",
                 onClick = onOpenResolve,
             ),
             ToolSpec(
@@ -139,7 +158,24 @@ fun ToolsScreen(
                         "电影、剧集、动漫，搜索、收藏和在线播放"
                     }
                 },
+                clearDataDescription = "收藏、观看进度和搜索历史",
                 onClick = onOpenAnime,
+            ),
+            ToolSpec(
+                key = "cidaren",
+                icon = Icons.Default.Spellcheck,
+                title = "词达人解析",
+                subtitle = { "粘贴题目出答案解析：离线题库 + 逐项分析 + 免费 AI" },
+                clearDataDescription = "错题、自定义词库、AI 设置和答题统计",
+                onClick = onOpenCidaren,
+            ),
+            ToolSpec(
+                key = "yxy",
+                icon = Icons.Default.AccountBalanceWallet,
+                title = "易校园",
+                subtitle = { "校园卡余额与消费明细" },
+                clearDataDescription = "加密保存的登录会话和本地 Keystore 密钥",
+                onClick = onOpenYxy,
             ),
         ).associateBy { it.key }
     }
@@ -149,6 +185,9 @@ fun ToolsScreen(
             TopAppBar(
                 title = { Text(if (editMode) "编辑首页" else "工具") },
                 actions = {
+                    IconButton(onClick = { showPluginManager = true }) {
+                        Icon(Icons.Default.Extension, contentDescription = "插件管理")
+                    }
                     IconButton(onClick = { editMode = !editMode }) {
                         Icon(
                             if (editMode) Icons.Default.Close else Icons.Default.Edit,
@@ -228,7 +267,7 @@ fun ToolsScreen(
                         )
                     }
                 }
-                if (hiddenEntries.isNotEmpty()) {
+                if (hiddenEntries.any { it in installedEntries }) {
                     Text(
                         text = "部分入口已隐藏，点右上角编辑可以恢复",
                         style = MaterialTheme.typography.bodySmall,
@@ -236,10 +275,121 @@ fun ToolsScreen(
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 }
+
             }
             Spacer(Modifier.height(24.dp))
         }
     }
+
+    if (showPluginManager) {
+        PluginManagerDialog(
+            plugins = specs.values.sortedBy { spec -> AppSettings.DEFAULT_TOOL_ORDER.indexOf(spec.key) },
+            installedEntries = installedEntries,
+            onInstall = onInstallPlugin,
+            onUninstall = onUninstallPlugin,
+            onDismiss = { showPluginManager = false },
+        )
+    }
+}
+
+@Composable
+private fun PluginManagerDialog(
+    plugins: List<ToolSpec>,
+    installedEntries: Set<String>,
+    onInstall: (String) -> Unit,
+    onUninstall: (String, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var uninstallTarget by remember { mutableStateOf<ToolSpec?>(null) }
+    var clearData by remember(uninstallTarget) { mutableStateOf(false) }
+    val target = uninstallTarget
+
+    AlertDialog(
+        onDismissRequest = {
+            if (target != null) uninstallTarget = null else onDismiss()
+        },
+        title = { Text(if (target == null) "插件管理" else "卸载${target.title}") },
+        text = {
+            if (target != null) {
+                Column {
+                    Text("卸载后会从工具首页移除并禁止进入；插件代码仍包含在当前 APK 中，可以随时重新安装。")
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "默认保留数据；重新安装后可以继续使用原有数据。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = clearData, onCheckedChange = { clearData = it })
+                        Column {
+                            Text("同时清除该插件的数据")
+                            Text(
+                                target.clearDataDescription,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    plugins.forEach { plugin ->
+                        val installed = plugin.key in installedEntries
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(plugin.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(plugin.title, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (installed) "已安装 · ${plugin.subtitle()}" else "未安装 · ${plugin.subtitle()}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (installed) {
+                                    TextButton(onClick = { uninstallTarget = plugin }) { Text("卸载") }
+                                } else {
+                                    TextButton(onClick = { onInstall(plugin.key) }) { Text("安装") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (target != null) {
+                TextButton(onClick = {
+                    onUninstall(target.key, clearData)
+                    uninstallTarget = null
+                }) { Text("确认卸载", color = MaterialTheme.colorScheme.error) }
+            } else {
+                TextButton(onClick = onDismiss) { Text("完成") }
+            }
+        },
+        dismissButton = {
+            if (target != null) {
+                TextButton(onClick = { uninstallTarget = null }) { Text("取消") }
+            }
+        },
+    )
 }
 
 @Composable
@@ -247,6 +397,7 @@ private fun ToolEntry(icon: ImageVector, title: String, subtitle: String, onClic
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

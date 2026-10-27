@@ -57,6 +57,12 @@ class TimetableRepository(private val store: TimetableStore) {
         persist(TimetableSnapshot(firstMonday = _snapshot.value.firstMonday, weekCount = _snapshot.value.weekCount))
     }
 
+    fun clearPluginData() {
+        store.clearAuxiliaryData()
+        cachedDiagnostics = emptyList()
+        persist(TimetableSnapshot())
+    }
+
     fun recordDiagnostics(exchanges: List<RawExchange>) {
         if (exchanges.isEmpty()) return
         cachedDiagnostics = exchanges
@@ -77,7 +83,7 @@ class TimetableRepository(private val store: TimetableStore) {
         val before = _snapshot.value
         persist(
             before.copy(
-                sessions = sessions.distinctBy { it.id }.sortedWith(SESSION_ORDER),
+                sessions = sessions.distinctBy { "${it.id}|${it.room}" }.sortedWith(SESSION_ORDER),
                 firstMonday = firstMonday.ifBlank { before.firstMonday },
                 weekCount = if (weekCount > 0) weekCount.coerceIn(1, 40) else before.weekCount,
                 updatedAt = System.currentTimeMillis(),
@@ -122,8 +128,9 @@ class TimetableRepository(private val store: TimetableStore) {
     private fun mergeById(base: List<CourseSession>, incoming: List<CourseSession>): List<CourseSession> {
         val merged = LinkedHashMap<String, CourseSession>()
         (base + incoming).forEach { session ->
-            val existing = merged[session.id]
-            merged[session.id] = if (existing == null) {
+            val key = "${session.id}|${session.room}"
+            val existing = merged[key]
+            merged[key] = if (existing == null) {
                 session
             } else {
                 existing.copy(

@@ -370,8 +370,9 @@ object QzWebParser {
     private fun mergeSessions(sessions: List<CourseSession>): List<CourseSession> {
         val merged = LinkedHashMap<String, CourseSession>()
         sessions.forEach { session ->
-            val existing = merged[session.id]
-            merged[session.id] = if (existing == null) {
+            val key = "${session.id}|${session.room}"
+            val existing = merged[key]
+            merged[key] = if (existing == null) {
                 session
             } else {
                 existing.copy(

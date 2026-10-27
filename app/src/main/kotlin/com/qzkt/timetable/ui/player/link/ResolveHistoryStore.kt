@@ -52,7 +52,9 @@ class ResolveHistoryStore(context: Context) {
         }.toString()).apply()
     }
 
-    fun clear() = prefs.edit().remove(KEY_ENTRIES).apply()
+    fun clear() {
+        check(prefs.edit().remove(KEY_ENTRIES).commit()) { "无法清除链接解析历史" }
+    }
 
     private companion object {
         const val PREFS_NAME = "resolve_history"

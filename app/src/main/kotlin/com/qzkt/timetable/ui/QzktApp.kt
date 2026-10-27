@@ -1,9 +1,13 @@
 package com.qzkt.timetable.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Widgets
@@ -13,8 +17,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,6 +40,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.qzkt.timetable.data.AppSettings
+import com.qzkt.timetable.data.anime.AnimeFavorite
 import com.qzkt.timetable.ui.account.AccountScreen
 import com.qzkt.timetable.ui.anime.AnimeDetailScreen
 import com.qzkt.timetable.ui.anime.AnimeScreen
@@ -53,8 +62,10 @@ import com.qzkt.timetable.ui.book.ReaderScreen
 import com.qzkt.timetable.ui.grades.GradesScreen
 import com.qzkt.timetable.ui.grades.GradesViewModel
 import com.qzkt.timetable.ui.grades.GradesViewModelFactory
+import com.qzkt.timetable.cidaren.CidarenScreen
 import com.qzkt.timetable.ui.tools.ToolsScreen
 import com.qzkt.timetable.ui.web.WebImportScreen
+import com.qzkt.timetable.yxy.YxyScreen
 
 private object Routes {
     /** 工具页：起始页，课表和播放器的入口都在这里。 */
@@ -79,6 +90,10 @@ private object Routes {
     const val DEBUG = "debug"
     const val SETUP = "setup"
     const val WEB = "web"
+    /** 词达人解析：内置的题目解析器（原生 Compose 实现），见 cidaren/CidarenScreen.kt。 */
+    const val CIDAREN = "cidaren"
+    /** 易校园：校园卡余额与消费明细。 */
+    const val YXY = "yxy"
     const val ACCOUNT = "account"
 }
 
@@ -126,29 +141,80 @@ fun QzktApp(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val installedPlugins = AppSettings.normalizeInstalledToolKeys(settings.installedToolKeys).toSet()
+    val currentPlugin = when {
+        currentRoute == Routes.ACADEMIC ||
+            currentRoute == Routes.TIMETABLE ||
+            currentRoute == Routes.GRADES ||
+            currentRoute == Routes.ACCOUNT ||
+            currentRoute == Routes.SETUP ||
+            currentRoute == Routes.WEB -> "academic"
+        currentRoute == Routes.BOOK || currentRoute?.startsWith("book_read/") == true -> "book"
+        currentRoute == Routes.RESOLVE -> "resolve"
+        currentRoute == Routes.ANIME || currentRoute?.startsWith("anime_detail/") == true -> "anime"
+        currentRoute == Routes.CIDAREN -> "cidaren"
+        currentRoute == Routes.YXY -> "yxy"
+        else -> null
+    }
+    LaunchedEffect(currentRoute, installedPlugins) {
+        val pluginMissing = currentPlugin?.let { it !in installedPlugins } == true
+        val playerPlugin = if (animeSession != null) "anime" else "resolve"
+        val playerDependenciesMissing = currentRoute == Routes.PLAYER && playerPlugin !in installedPlugins
+        if (pluginMissing || playerDependenciesMissing) {
+            navController.navigate(Routes.TOOLS) {
+                popUpTo(Routes.TOOLS) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
     // 底部页签只在两个顶级页（工具 / 设置）显示：教务、影视、链接解析、图书
     // 及其详情、播放、账号等子页一律隐藏，把屏幕留给内容本身。
     val showBottomBar = currentRoute == Routes.TOOLS || currentRoute == Routes.SETTINGS
 
     Scaffold(
+        contentWindowInsets = if (playerFullscreen) {
+            WindowInsets(0.dp)
+        } else {
+            ScaffoldDefaults.contentWindowInsets
+        },
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
-                    TABS.forEach { tab ->
-                        // 页签只在顶级页显示，选中即当前路由本身
-                        val selected = currentRoute == tab.route
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
-                        )
+                val floatingShape = RoundedCornerShape(28.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 8.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = floatingShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+                        tonalElevation = 4.dp,
+                        shadowElevation = 10.dp,
+                    ) {
+                        NavigationBar(
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp,
+                            windowInsets = WindowInsets(0.dp),
+                        ) {
+                            TABS.forEach { tab ->
+                                // 页签只在顶级页显示，选中即当前路由本身
+                                val selected = currentRoute == tab.route
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick = {
+                                        navController.navigate(tab.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                    label = { Text(tab.label) },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -235,15 +301,28 @@ fun QzktApp(
                         animeFavoriteCount = animeFavorites.size,
                         configured = settings.configured,
                         hiddenEntries = settings.hiddenToolKeys.toSet(),
+                        installedEntries = installedPlugins,
                         entryOrder = settings.toolOrder,
                         themeMode = settings.themeMode,
                         dynamicColor = settings.dynamicColor,
                         onUpdate = viewModel::saveSettings,
+                        onInstallPlugin = viewModel::installPlugin,
+                        onUninstallPlugin = viewModel::uninstallPlugin,
                         onOpenAcademic = { navController.navigate(Routes.ACADEMIC) },
                         onOpenResolve = { navController.navigate(Routes.RESOLVE) },
                         onOpenBooks = { navController.navigate(Routes.BOOK) },
                         onOpenAnime = { navController.navigate(Routes.ANIME) },
+                        onOpenCidaren = { navController.navigate(Routes.CIDAREN) },
+                        onOpenYxy = { navController.navigate(Routes.YXY) },
                     )
+                }
+
+                composable(Routes.CIDAREN) {
+                    CidarenScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Routes.YXY) {
+                    YxyScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable(Routes.GRADES) {
@@ -366,6 +445,22 @@ fun QzktApp(
                         animeSession = animeSession,
                         onEpisodeSwitched = { animeViewModel.switchEpisode(it) },
                         autoPlayNext = settings.autoPlayNext,
+                        isFavorite = animeSession?.let { session ->
+                            animeFavorites.any { it.source == session.source && it.id == session.id }
+                        } == true,
+                        onToggleFavorite = {
+                            animeSession?.takeIf { it.id.isNotBlank() }?.let { session ->
+                                animeViewModel.toggleFavorite(
+                                    AnimeFavorite(
+                                        source = session.source,
+                                        id = session.id,
+                                        name = session.name,
+                                        pic = session.pic.orEmpty(),
+                                        addedAt = System.currentTimeMillis(),
+                                    ),
+                                )
+                            }
+                        },
                         onBack = { navController.popBackStack() },
                     )
                 }

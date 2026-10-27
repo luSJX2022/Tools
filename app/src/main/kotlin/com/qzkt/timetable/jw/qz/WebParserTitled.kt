@@ -101,8 +101,8 @@ internal object WebParserTitled {
         val teacher = block.firstOrNull { it.attr("title") == T_TEACHER }?.text()?.trim().orEmpty()
         val building = block.firstOrNull { it.attr("title") == T_BUILDING }?.text()?.trim().orEmpty()
         val roomNumber = block.firstOrNull { it.attr("title") == T_ROOM }?.text()?.trim().orEmpty()
-        // "【3#教学楼（青岛）】" + "3#A315" 拼起来才是完整位置
-        val room = listOf(building, roomNumber).filter { it.isNotEmpty() }.joinToString(" ")
+        // 教室编号比教学楼说明更精确；没有教室编号时再退回教学楼。
+        val room = roomNumber.ifBlank { building }
 
         val weekText = block.firstOrNull { it.attr("title") == T_WEEKS }?.text()?.trim().orEmpty()
         val weeks = WeekRangeParser.parse(weekText, weekText).weeks

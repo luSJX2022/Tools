@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -33,6 +34,7 @@ import com.qzkt.timetable.ui.book.BookViewModelFactory
 import com.qzkt.timetable.ui.grades.GradesViewModel
 import com.qzkt.timetable.ui.grades.GradesViewModelFactory
 import com.qzkt.timetable.ui.common.SplashOverlay
+import com.qzkt.timetable.ui.common.LiquidGlassBackdrop
 import com.qzkt.timetable.ui.theme.QzktTheme
 import com.qzkt.timetable.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
@@ -68,7 +70,12 @@ class MainActivity : ComponentActivity() {
 
             QzktTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    LiquidGlassBackdrop()
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onBackground,
+                    ) {
                         QzktApp(viewModel, animeViewModel, bookViewModel, gradesViewModel)
                     }
                     AnimatedVisibility(visible = showSplash, exit = fadeOut(animationSpec = tween(350))) {
