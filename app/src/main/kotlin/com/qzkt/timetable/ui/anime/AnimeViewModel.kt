@@ -9,8 +9,9 @@ import com.qzkt.timetable.data.anime.AnimePlayRequest
 import com.qzkt.timetable.data.anime.AnimeProgress
 import com.qzkt.timetable.data.anime.AnimeDetail
 import com.qzkt.timetable.data.anime.AnimeItem
+import com.qzkt.timetable.data.anime.AnimePage
 import com.qzkt.timetable.data.anime.AnimeStore
-import com.qzkt.timetable.data.anime.MacCmsSource
+import com.qzkt.timetable.data.anime.AnimeSource
 import com.qzkt.timetable.data.anime.VideoSources
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,6 +45,21 @@ data class AnimeDetailState(
     val error: String? = null,
 )
 
+/**
+ * 首页「推荐」和「排行」两个页签的分页状态。
+ * 跟筛选页签的 [AnimeListState] 分开：三个页签各自翻页互不干扰。
+ */
+data class AnimeFeedState(
+    /** 已加载到第几页；0 = 还没加载。 */
+    val page: Int = 0,
+    val totalPages: Int = 1,
+    val items: List<AnimeItem> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+) {
+    val hasMore: Boolean get() = page in 1 until totalPages
+}
+
 class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
 
     private val _sourceKey = MutableStateFlow(VideoSources.all.first().key)
@@ -51,15 +67,24 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
     /** 当前选中的影视源 key（设置页里可以切换）。 */
     val sourceKey: StateFlow<String> = _sourceKey
 
-    val source: MacCmsSource get() = VideoSources.byKey(_sourceKey.value)
+    val source: AnimeSource get() = VideoSources.byKey(_sourceKey.value)
 
     /** 分类页签（显示名），跟随当前源变化。 */
     val categories: List<Pair<String, String>> get() = source.categories
 
-    val availableSources: List<MacCmsSource> get() = VideoSources.all
+    val availableSources: List<AnimeSource> get() = VideoSources.all
 
     private val _list = MutableStateFlow(AnimeListState())
     val list: StateFlow<AnimeListState> = _list
+
+    /** 首页「推荐」feed：当前源第一个分类的分页列表（banner 也从这里取前几部）。 */
+    private val _home = MutableStateFlow(AnimeFeedState())
+    val home: StateFlow<AnimeFeedState> = _home
+    private var homeCategoryId: String = ""
+
+    /** 「排行」feed：各源没有排行接口，用「不限分类的最新更新」代替。 */
+    private val _latest = MutableStateFlow(AnimeFeedState())
+    val latest: StateFlow<AnimeFeedState> = _latest
 
     private val _detail = MutableStateFlow(AnimeDetailState())
     val detail: StateFlow<AnimeDetailState> = _detail
@@ -92,6 +117,10 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
                 if (first || changed) {
                     first = false
                     resetToDefaultCategory()
+                    homeCategoryId = source.categories.first().second
+                    _home.value = AnimeFeedState()
+                    _latest.value = AnimeFeedState()
+                    loadMoreHome()
                 }
             }
         }
@@ -176,6 +205,54 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
             }.onFailure { e ->
                 _list.update { it.copy(loading = false, error = e.message ?: e.toString()) }
             }
+        }
+    }
+
+    /** 首页「推荐」触底翻页。 */
+    fun loadMoreHome() {
+        loadFeed(_home) { page -> source.list(homeCategoryId, page) }
+    }
+
+    /** 「排行」页签第一次打开时才加载，省一次启动请求。 */
+    fun ensureLatestLoaded() {
+        val s = _latest.value
+        if (s.items.isEmpty() && !s.loading && s.error == null) loadMoreLatest()
+    }
+
+    fun loadMoreLatest() {
+        loadFeed(_latest) { page -> fetchLatest(page) }
+    }
+
+    /**
+     * 「排行」= 不限分类的最新更新。苹果 CMS 不带 `t` 就是全站最新；
+     * Internet Archive 这类不认空分类的源退回它的第一个分类。
+     */
+    private suspend fun fetchLatest(page: Int): AnimePage =
+        runCatching { source.list("", page) }
+            .getOrElse { source.list(source.categories.first().second, page) }
+
+    /** 通用分页：首页 / 排行两个 feed 共用一套触底翻页逻辑。 */
+    private fun loadFeed(
+        feed: MutableStateFlow<AnimeFeedState>,
+        fetch: suspend (Int) -> AnimePage,
+    ) {
+        val state = feed.value
+        if (state.loading || (state.page > 0 && !state.hasMore)) return
+        val targetPage = if (state.page == 0) 1 else state.page + 1
+        feed.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            runCatching { fetch(targetPage) }
+                .onSuccess { page ->
+                    feed.update {
+                        it.copy(
+                            page = page.page,
+                            totalPages = page.totalPages,
+                            items = if (targetPage == 1) page.items else it.items + page.items,
+                            loading = false,
+                        )
+                    }
+                }
+                .onFailure { e -> feed.update { it.copy(loading = false, error = e.message ?: e.toString()) } }
         }
     }
 
