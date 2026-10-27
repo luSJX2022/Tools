@@ -18,14 +18,28 @@ private val Context.animeDataStore: DataStore<Preferences> by preferencesDataSto
 
 @Serializable
 private data class AnimeStoreData(
-    /** 选中的影视源 key，对应 [VideoSources.all]。 */
+    /** 选中的影视源 key，对应 [VideoSources.all] 或 [CustomAnimeSource.key]。 */
     val sourceKey: String = "bfzy",
     val favorites: List<AnimeFavorite> = emptyList(),
     /** key 是「source:id」。 */
     val progress: Map<String, AnimeProgress> = emptyMap(),
     /** 搜索历史，最新的在前，去重，最多 [MAX_SEARCH_HISTORY] 条。 */
     val searchHistory: List<String> = emptyList(),
+    /** 用户自己添加的苹果 CMS 采集站。 */
+    val customSources: List<CustomAnimeSource> = emptyList(),
+    /** 被停用的源 key（内置 + 自定义通用），停用后不在影视页出现。 */
+    val disabledSources: List<String> = emptyList(),
 )
+
+/** 用户自定义的苹果 CMS10 采集站（源管理页里手动添加）。 */
+@Serializable
+data class CustomAnimeSource(
+    val name: String,
+    val baseUrl: String,
+) {
+    /** 稳定 key：同一地址重复添加会互相覆盖。 */
+    val key: String get() = "custom:$baseUrl"
+}
 
 /** 追番收藏和观看进度的本地存储（不联网同步）。 */
 class AnimeStore(private val context: Context) {
@@ -51,6 +65,54 @@ class AnimeStore(private val context: Context) {
             prefs[key] = json.encodeToString(
                 AnimeStoreData.serializer(),
                 existing.copy(sourceKey = sourceKey),
+            )
+        }
+    }
+
+    /** 用户自定义的采集站列表。 */
+    val customSources: Flow<List<CustomAnimeSource>> = data.map { it.customSources }
+
+    /** 被停用的源 key 集合。 */
+    val disabledSources: Flow<Set<String>> = data.map { it.disabledSources.toSet() }
+
+    /** 添加自定义采集站；同地址会覆盖旧的名字。 */
+    suspend fun addCustomSource(source: CustomAnimeSource) {
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            val rest = existing.customSources.filterNot { it.baseUrl == source.baseUrl }
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(customSources = rest + source),
+            )
+        }
+    }
+
+    suspend fun removeCustomSource(baseUrl: String) {
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(
+                    customSources = existing.customSources.filterNot { it.baseUrl == baseUrl },
+                    // 顺手清掉它的停用标记
+                    disabledSources = existing.disabledSources.filterNot { it == "custom:$baseUrl" },
+                ),
+            )
+        }
+    }
+
+    /** 启用 / 停用某个源。 */
+    suspend fun setSourceEnabled(sourceKey: String, enabled: Boolean) {
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            val disabled = if (enabled) {
+                existing.disabledSources.filterNot { it == sourceKey }
+            } else {
+                (existing.disabledSources + sourceKey).distinct()
+            }
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(disabledSources = disabled),
             )
         }
     }

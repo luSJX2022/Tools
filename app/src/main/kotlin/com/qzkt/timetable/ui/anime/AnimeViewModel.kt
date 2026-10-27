@@ -12,10 +12,13 @@ import com.qzkt.timetable.data.anime.AnimeItem
 import com.qzkt.timetable.data.anime.AnimePage
 import com.qzkt.timetable.data.anime.AnimeStore
 import com.qzkt.timetable.data.anime.AnimeSource
+import com.qzkt.timetable.data.anime.CustomAnimeSource
+import com.qzkt.timetable.data.anime.MacCmsSource
 import com.qzkt.timetable.data.anime.VideoSources
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -64,15 +67,42 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
 
     private val _sourceKey = MutableStateFlow(VideoSources.all.first().key)
 
-    /** 当前选中的影视源 key（设置页里可以切换）。 */
+    /** 当前选中的影视源 key（源管理页里可以切换）。 */
     val sourceKey: StateFlow<String> = _sourceKey
 
-    val source: AnimeSource get() = VideoSources.byKey(_sourceKey.value)
+    private val _customSources = MutableStateFlow<List<CustomAnimeSource>>(emptyList())
+    private val _disabledKeys = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * 可用源列表 = 内置源（去掉停用的）+ 自定义源（去掉停用的）。
+     * 影视页的分类页签、源管理页都读这个。
+     */
+    val sources: StateFlow<List<AnimeSource>> = combine(_customSources, _disabledKeys) { customs, disabled ->
+        VideoSources.all.filter { it.key !in disabled } +
+            customs.filter { it.key !in disabled }.map { custom ->
+                MacCmsSource(
+                    key = custom.key,
+                    name = custom.name,
+                    baseUrl = custom.baseUrl,
+                    // 自定义源不知道分类 id，给一个「全部」：苹果 CMS 不带 t 就是全站最新
+                    categories = listOf("全部" to ""),
+                )
+            }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, VideoSources.all.toList())
+
+    val source: AnimeSource
+        get() = sources.value.firstOrNull { it.key == _sourceKey.value }
+            ?: sources.value.firstOrNull()
+            ?: VideoSources.byKey(_sourceKey.value)
 
     /** 分类页签（显示名），跟随当前源变化。 */
     val categories: List<Pair<String, String>> get() = source.categories
 
-    val availableSources: List<AnimeSource> get() = VideoSources.all
+    /** 自定义源（源管理页展示 / 删除用），含被停用的。 */
+    val customSources: StateFlow<List<CustomAnimeSource>> = _customSources
+
+    /** 被停用的源 key（源管理页开关用）。 */
+    val disabledSources: StateFlow<Set<String>> = _disabledKeys
 
     private val _list = MutableStateFlow(AnimeListState())
     val list: StateFlow<AnimeListState> = _list
@@ -125,6 +155,16 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
             }
         }
         viewModelScope.launch { store.progress.collect { _progress.value = it } }
+        viewModelScope.launch { store.customSources.collect { _customSources.value = it } }
+        viewModelScope.launch { store.disabledSources.collect { _disabledKeys.value = it } }
+        // 当前源被停用 / 删掉时，回退到第一个可用源
+        viewModelScope.launch {
+            sources.collect { list ->
+                if (list.isNotEmpty() && list.none { it.key == _sourceKey.value }) {
+                    store.selectSource(list.first().key)
+                }
+            }
+        }
     }
 
     /** 打开当前源的第一个分类（启动 / 换源时走这里）。 */
@@ -169,10 +209,28 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
         _list.value = AnimeListState(mode = AnimeListState.Mode.FAVORITES, categoryId = _list.value.categoryId)
     }
 
-    /** 设置页切换影视源：写本地，collect 里会自动重置列表并重新加载。 */
+    /** 源管理页切换影视源：写本地，collect 里会自动重置列表并重新加载。 */
     fun selectSource(key: String) {
         if (key == _sourceKey.value) return
         viewModelScope.launch { store.selectSource(key) }
+    }
+
+    /** 启用 / 停用某个源（停用的源不在影视页出现）。 */
+    fun setSourceEnabled(key: String, enabled: Boolean) {
+        viewModelScope.launch { store.setSourceEnabled(key, enabled) }
+    }
+
+    /** 添加自定义采集站。返回错误信息，null = 成功。 */
+    fun addCustomSource(name: String, baseUrl: String): String? {
+        val cleanName = name.trim()
+        val cleanUrl = normalizeCustomSourceUrl(baseUrl) ?: return "请输入有效的 API 地址"
+        if (cleanName.isEmpty()) return "请输入源名称"
+        viewModelScope.launch { store.addCustomSource(CustomAnimeSource(cleanName, cleanUrl)) }
+        return null
+    }
+
+    fun removeCustomSource(baseUrl: String) {
+        viewModelScope.launch { store.removeCustomSource(baseUrl) }
     }
 
     /** 触底加载下一页。 */
@@ -341,4 +399,23 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
 class AnimeViewModelFactory(private val container: AppContainer) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = AnimeViewModel(container.animeStore) as T
+}
+
+/**
+ * 规范化自定义源的 API 地址：补协议、去查询参数和尾斜杠；
+ * 用户直接粘贴完整采集地址（…/api.php/provide/vod）时剥掉后缀，只留站点根地址。
+ * 返回 null = 输入没法用。
+ */
+internal fun normalizeCustomSourceUrl(input: String): String? {
+    var s = input.trim()
+    if (s.isEmpty()) return null
+    if (!s.startsWith("http://", ignoreCase = true) && !s.startsWith("https://", ignoreCase = true)) {
+        s = "https://$s"
+    }
+    s = s.substringBefore('?').trimEnd('/')
+    val marker = s.indexOf("/api.php", startIndex = 9)
+    if (marker > 0) s = s.substring(0, marker)
+    val host = s.removePrefix("https://").removePrefix("http://").substringBefore('/')
+    if (host.isEmpty() || !host.contains('.')) return null
+    return s
 }

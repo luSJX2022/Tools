@@ -217,6 +217,32 @@ object VideoSources {
                 "短剧" to "36",
             ),
         ),
+        MacCmsSource(
+            key = "suoni",
+            name = "索尼资源",
+            baseUrl = "https://suoniapi.com",
+            categories = listOf(
+                "电影" to "6,7,8,9,10,11,12,62",
+                "剧集" to "13,14,15,16,17,18,19,23",
+                "动漫" to "29,30,31,44,45",
+                "综艺" to "25,26,27,28",
+                "短剧" to "54,64,65,66,67,68,69",
+                "纪录片" to "20",
+            ),
+        ),
+        MacCmsSource(
+            key = "wujin",
+            name = "无尽资源",
+            baseUrl = "https://api.wujinapi.me",
+            categories = listOf(
+                "电影" to "6,7,8,9,10,11,12,32,34,35",
+                "剧集" to "13,14,15,16,22,23,24,37",
+                "动漫" to "29,30,31,33,42,43",
+                "综艺" to "25,26,27,28",
+                "短剧" to "41,54,55,56,57,58,59",
+                "纪录片" to "21",
+            ),
+        ),
         InternetArchiveSource(),
     )
 

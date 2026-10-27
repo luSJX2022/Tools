@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Favorite
@@ -120,6 +121,7 @@ fun AnimeScreen(
     viewModel: AnimeViewModel,
     onBack: () -> Unit,
     onOpenDetail: (id: String) -> Unit,
+    onManageSources: () -> Unit,
 ) {
     val listState by viewModel.list.collectAsStateWithLifecycle()
     val homeFeed by viewModel.home.collectAsStateWithLifecycle()
@@ -163,6 +165,10 @@ fun AnimeScreen(
         AnimeSettingsDialog(
             viewModel = viewModel,
             favoriteCount = favorites.size,
+            onManageSources = {
+                showSettings = false
+                onManageSources()
+            },
             onDismiss = { showSettings = false },
         )
     }
@@ -782,14 +788,14 @@ private fun SectionTitle(text: String) {
     )
 }
 
-/** 影视设置：资源站切换 + 收藏数据管理（从设置页挪进来，右上角更多菜单打开）。 */
+/** 影视设置：源管理入口 + 收藏数据管理（右上角更多菜单打开）。 */
 @Composable
 private fun AnimeSettingsDialog(
     viewModel: AnimeViewModel,
     favoriteCount: Int,
+    onManageSources: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sourceKey by viewModel.sourceKey.collectAsStateWithLifecycle()
     var confirmClearFavorites by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -797,32 +803,31 @@ private fun AnimeSettingsDialog(
         title = { Text("影视设置") },
         text = {
             Column {
-                Text("资源站", fontSize = 13.sp)
-                Spacer(Modifier.height(4.dp))
-                viewModel.availableSources.forEach { source ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.selectSource(source.key) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = source.key == sourceKey,
-                            onClick = { viewModel.selectSource(source.key) },
+                val sourceKey by viewModel.sourceKey.collectAsStateWithLifecycle()
+                val sources by viewModel.sources.collectAsStateWithLifecycle()
+                val current = sources.firstOrNull { it.key == sourceKey }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onManageSources)
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("影视源管理", fontSize = 14.sp)
+                        Text(
+                            text = "当前 " + (current?.name ?: "无可用源") +
+                                " · 共 ${sources.size} 个可用源",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(source.name, fontSize = 14.sp)
-                            Text(
-                                text = source.endpointLabel
-                                    .removePrefix("https://").removePrefix("http://")
-                                    .substringBefore('/') +
-                                    " · " + source.categories.joinToString("／") { it.first },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Text(
                     text = "公有领域目录仅收录 API 标注为 Public Domain Mark / CC0 的项目；上传者提供的许可信息仍需自行核验。",

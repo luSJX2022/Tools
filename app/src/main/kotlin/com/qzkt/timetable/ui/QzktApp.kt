@@ -45,6 +45,7 @@ import com.qzkt.timetable.data.anime.AnimeFavorite
 import com.qzkt.timetable.ui.account.AccountScreen
 import com.qzkt.timetable.ui.anime.AnimeDetailScreen
 import com.qzkt.timetable.ui.anime.AnimeScreen
+import com.qzkt.timetable.ui.anime.AnimeSourceScreen
 import com.qzkt.timetable.ui.anime.AnimeViewModel
 import com.qzkt.timetable.ui.debug.DebugScreen
 import com.qzkt.timetable.ui.grid.TimetableScreen
@@ -86,6 +87,8 @@ private object Routes {
     const val ACADEMIC = "academic"
     /** 参数是资源站里的番剧 id。 */
     const val ANIME_DETAIL = "anime_detail/{vodId}"
+    /** 影视源管理：开关启停、添加自定义采集站。 */
+    const val ANIME_SOURCE = "anime_source"
     const val SETTINGS = "settings"
     const val DEBUG = "debug"
     const val SETUP = "setup"
@@ -397,6 +400,14 @@ fun QzktApp(
                         viewModel = animeViewModel,
                         onBack = { navController.popBackStack() },
                         onOpenDetail = { id -> navController.navigate("anime_detail/$id") },
+                        onManageSources = { navController.navigate(Routes.ANIME_SOURCE) },
+                    )
+                }
+
+                composable(Routes.ANIME_SOURCE) {
+                    AnimeSourceScreen(
+                        viewModel = animeViewModel,
+                        onBack = { navController.popBackStack() },
                     )
                 }
 
