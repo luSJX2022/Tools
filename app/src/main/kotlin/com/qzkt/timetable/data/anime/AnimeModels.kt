@@ -12,6 +12,8 @@ data class AnimeItem(
     val pic: String = "",
     /** 备注，一般是「更新至第 N 集」「已完结」这类。 */
     val remark: String = "",
+    /** 分类、标签、简介等用于本地内容筛选的资源站元数据。 */
+    val filterMetadata: String = "",
 )
 
 /** 一集可播放的内容。 */
@@ -58,6 +60,8 @@ data class AnimeFavorite(
 data class AnimeProgress(
     val source: String,
     val id: String,
+    val name: String = "",
+    val pic: String = "",
     /** 0 起的集数下标（剧集列表里的位置）。 */
     val episodeIndex: Int,
     val episodeLabel: String,

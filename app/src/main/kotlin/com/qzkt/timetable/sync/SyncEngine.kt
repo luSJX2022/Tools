@@ -12,6 +12,7 @@ import com.qzkt.timetable.jw.qz.QzJsxsdDirect
 import com.qzkt.timetable.model.SyncReport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import com.qzkt.timetable.data.PluginLog
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
@@ -125,6 +126,7 @@ class SyncEngine(
      */
     suspend fun refreshNearbyWeeks(): SyncReport = withContext(Dispatchers.IO) {
         val settings = settingsStore.current()
+        PluginLog.i("课表", "开始刷新课表（" + settings.baseUrl + "，周数 " + settings.weekCount + "）")
         var session: JwSession? = null
         try {
             session = adapter.connect(JwConfig(settings.baseUrl, settings.username, settings.password))
@@ -138,6 +140,7 @@ class SyncEngine(
             if (!wholeTerm.isNullOrEmpty()) {
                 repository.replaceAll(wholeTerm, weekCount = weekCount)
                 repository.recordDiagnostics(session.rawLog)
+                PluginLog.i("课表", "整学期拉取成功，共 " + wholeTerm.size + " 个课次")
                 return@withContext SyncReport(true, "课表已更新", wholeTerm.size)
             }
 
@@ -179,10 +182,13 @@ class SyncEngine(
         var session: JwSession? = null
         try {
             val settings = settingsStore.current()
+            PluginLog.i("教务", "测试连接：" + settings.baseUrl)
             session = adapter.connect(JwConfig(settings.baseUrl, settings.username, settings.password))
             val term = session.loadTerm()
+            PluginLog.i("教务", "连接正常，当前第 " + term.currentWeek + " 周")
             Result.success(term)
         } catch (e: Exception) {
+            PluginLog.e("教务", "连接失败", e)
             Result.failure(e)
         } finally {
             repository.recordDiagnostics(session?.rawLog.orEmpty())

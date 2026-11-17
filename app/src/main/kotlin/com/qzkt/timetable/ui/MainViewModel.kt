@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.qzkt.timetable.AppContainer
+import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.data.AppSettings
 import com.qzkt.timetable.data.TimetableSnapshot
 import com.qzkt.timetable.data.backup.BackupData
@@ -21,6 +22,7 @@ import com.qzkt.timetable.jw.qz.QzJsxsdAutoLogin
 import com.qzkt.timetable.jw.qz.QzJsxsdDirect
 import com.qzkt.timetable.jw.qz.QzWebParser
 import com.qzkt.timetable.yxy.clearYxyPluginData
+import com.qzkt.timetable.data.tools.clearParcelPickupData
 import com.qzkt.timetable.sync.SyncScheduler
 import com.qzkt.timetable.widget.TimetableWidgetUpdater
 import kotlinx.coroutines.Dispatchers
@@ -302,8 +304,10 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 } ?: error("无法写入所选文件")
             }
         }.onSuccess {
+            PluginLog.i("备份", "备份已导出")
             _uiState.value = _uiState.value.copy(message = "备份已导出", messageIsError = false)
         }.onFailure { e ->
+            PluginLog.e("备份", "备份导出失败", e)
             _uiState.value = _uiState.value.copy(message = "导出失败：${e.message}", messageIsError = true)
         }
     }
@@ -365,22 +369,21 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun uninstallPlugin(key: String, clearData: Boolean) = viewModelScope.launch {
+    fun uninstallPlugin(key: String) = viewModelScope.launch {
         if (key !in AppSettings.DEFAULT_TOOL_ORDER) {
             _uiState.value = _uiState.value.copy(message = "未知插件：$key", messageIsError = true)
             return@launch
         }
         runCatching {
-            if (clearData) clearPluginData(key)
+            clearPluginData(key)
             container.settingsStore.update { it.withPluginUninstalled(key) }
             if (key == "academic") {
                 SyncScheduler.cancel(container.appContext)
                 container.classReminders.cancel()
-                if (clearData) TimetableWidgetUpdater.refresh(container.appContext)
+                TimetableWidgetUpdater.refresh(container.appContext)
             }
         }.onSuccess {
-            val message = if (clearData) "插件已卸载，本地数据已清除" else "插件已卸载，本地数据已保留"
-            _uiState.value = _uiState.value.copy(message = message, messageIsError = false)
+            _uiState.value = _uiState.value.copy(message = "插件及其本地数据已删除", messageIsError = false)
         }.onFailure { error ->
             _uiState.value = _uiState.value.copy(
                 message = "卸载插件失败：${error.message ?: error}",
@@ -414,6 +417,8 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             "anime" -> container.animeStore.clearPluginData()
             "cidaren" -> container.cidarenStore.clearPluginData()
             "yxy" -> clearYxyPluginData(container.appContext)
+            "parcel" -> clearParcelPickupData(container.appContext)
+            "keycheck" -> Unit
             else -> error("不支持清理该插件的数据：$key")
         }
     }

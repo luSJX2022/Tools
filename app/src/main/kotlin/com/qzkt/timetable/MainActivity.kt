@@ -7,18 +7,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,7 +27,6 @@ import com.qzkt.timetable.ui.book.BookViewModel
 import com.qzkt.timetable.ui.book.BookViewModelFactory
 import com.qzkt.timetable.ui.grades.GradesViewModel
 import com.qzkt.timetable.ui.grades.GradesViewModelFactory
-import com.qzkt.timetable.ui.common.SplashOverlay
 import com.qzkt.timetable.ui.common.LiquidGlassBackdrop
 import com.qzkt.timetable.ui.theme.QzktTheme
 import com.qzkt.timetable.ui.theme.ThemeMode
@@ -61,9 +54,6 @@ class MainActivity : ComponentActivity() {
             val bookViewModel: BookViewModel = viewModel(factory = BookViewModelFactory(container))
             val gradesViewModel: GradesViewModel = viewModel(factory = GradesViewModelFactory(container))
             val settings by viewModel.settings.collectAsStateWithLifecycle()
-            // 开屏动画：每次正常启动来一段，旋转重建后不重播
-            var showSplash by rememberSaveable { mutableStateOf(true) }
-
             val themeMode = remember(settings.themeMode) {
                 runCatching { ThemeMode.valueOf(settings.themeMode) }.getOrDefault(ThemeMode.SYSTEM)
             }
@@ -77,9 +67,6 @@ class MainActivity : ComponentActivity() {
                         contentColor = MaterialTheme.colorScheme.onBackground,
                     ) {
                         QzktApp(viewModel, animeViewModel, bookViewModel, gradesViewModel)
-                    }
-                    AnimatedVisibility(visible = showSplash, exit = fadeOut(animationSpec = tween(350))) {
-                        SplashOverlay(onFinished = { showSplash = false })
                     }
                 }
             }

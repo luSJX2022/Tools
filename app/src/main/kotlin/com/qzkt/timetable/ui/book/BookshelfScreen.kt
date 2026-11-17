@@ -5,6 +5,7 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -16,16 +17,20 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -37,11 +42,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -55,6 +62,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -103,7 +112,20 @@ fun BookshelfScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("图书") },
+                title = {
+                    Column {
+                        Text(
+                            text = if (tab == "shelf") "我的书架" else "发现好书",
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        Text(
+                            text = if (tab == "shelf") "${books.size} 本藏书 · 接着上次阅读"
+                            else "从开放书源探索更多作品",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -116,30 +138,49 @@ fun BookshelfScreen(
                 },
             )
         },
+        floatingActionButton = {
+            if (tab == "shelf") {
+                FloatingActionButton(
+                    onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
+                    shape = RoundedCornerShape(20.dp),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Icon(Icons.Default.FileOpen, contentDescription = "导入 TXT")
+                }
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = tab == "shelf",
-                    onClick = { tab = "shelf" },
-                    label = { Text("书架") },
-                )
-                FilterChip(
-                    selected = tab == "store",
-                    onClick = { tab = "store" },
-                    label = { Text("书城") },
-                )
-                Spacer(Modifier.weight(1f))
-                if (tab == "shelf") {
-                    OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
-                    ) { Text("导入 TXT") }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+            ) {
+                Row(
+                    modifier = Modifier.padding(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    LibraryTab(
+                        title = "书架",
+                        selected = tab == "shelf",
+                        count = books.size.takeIf { tab == "shelf" },
+                        modifier = Modifier.weight(1f),
+                        onClick = { tab = "shelf" },
+                    )
+                    LibraryTab(
+                        title = "书城",
+                        selected = tab == "store",
+                        modifier = Modifier.weight(1f),
+                        onClick = { tab = "store" },
+                    )
                 }
             }
 
@@ -168,12 +209,14 @@ fun BookshelfScreen(
                         onOpenBook = { onlineBook ->
                             viewModel.addOnlineBook(onlineBook) { id -> onOpenBook(id) }
                         },
+                        modifier = Modifier.weight(1f),
                     )
                 }
                 else -> ShelfTab(
                     books = books,
                     onOpenBook = { onOpenBook(it.id) },
                     onDelete = { pendingDelete = it },
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -320,17 +363,90 @@ private fun BookSettingsDialog(viewModel: BookViewModel, onDismiss: () -> Unit) 
 }
 
 @Composable
-private fun ShelfTab(books: List<Book>, onOpenBook: (Book) -> Unit, onDelete: (Book) -> Unit) {
+private fun LibraryTab(
+    title: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    count: Int? = null,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 46.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(17.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (count != null) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    count.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShelfTab(
+    books: List<Book>,
+    onOpenBook: (Book) -> Unit,
+    onDelete: (Book) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     if (books.isEmpty()) {
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = "书架还是空的。点「导入 TXT」加本地书，或切到「书城」搜在线书",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Box(
+            modifier = modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(24.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.MenuBook,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(44.dp),
+                )
+                Text("书架还是空的", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "点右下角导入 TXT，或去书城发现一本好书",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         return
     }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 92.dp),
+    ) {
+        item {
+            Text(
+                "继续阅读",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
         items(books, key = { it.id }) { book ->
             BookRow(
                 book = book,
@@ -356,10 +472,12 @@ private fun StoreTab(
     onOpenCategory: (String) -> Unit,
     onCategoryNextPage: () -> Unit,
     onOpenBook: (com.qzkt.timetable.data.book.OnlineBook) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -368,17 +486,28 @@ private fun StoreTab(
                         value = query,
                         onValueChange = onQueryChange,
                         placeholder = { Text("书名 / 作者 / 关键词", style = MaterialTheme.typography.bodySmall) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall,
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onSearch, enabled = query.isNotBlank() && !searching) {
-                        Text(if (searching) "搜索中…" else "搜索")
+                    Spacer(Modifier.width(6.dp))
+                    IconButton(onClick = onSearch, enabled = query.isNotBlank() && !searching) {
+                        if (searching) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Search, contentDescription = "搜索")
+                        }
                     }
                 }
 
                 if (categories.isNotEmpty()) {
-                    // 分类栏（横向滚动）
+                    Text(
+                        "分类浏览",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier
@@ -483,6 +612,8 @@ private fun StoreHint(text: String, center: Boolean) {
 private fun OnlineBookRow(onlineBook: com.qzkt.timetable.data.book.OnlineBook, onClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(modifier = Modifier.padding(10.dp)) {
@@ -538,43 +669,96 @@ private fun OnlineBookRow(onlineBook: com.qzkt.timetable.data.book.OnlineBook, o
 @Composable
 private fun BookRow(book: Book, onClick: () -> Unit, onDelete: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (book.kind == "online" && book.cover.isNotEmpty()) {
-                AsyncImage(
-                    model = book.cover,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(width = 44.dp, height = 58.dp)
-                        .clip(MaterialTheme.shapes.small),
-                )
-                Spacer(Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(width = 58.dp, height = 76.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.72f),
+                            ),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (book.kind == "online" && book.cover.isNotEmpty()) {
+                    AsyncImage(
+                        model = book.cover,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        Icons.AutoMirrored.Filled.MenuBook,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
             }
-            Column(modifier = Modifier.weight(1f)) {
+            Spacer(Modifier.width(14.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
                     text = book.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = when (book.kind) {
+                        "online" -> book.author.ifBlank { "在线书籍" }
+                        else -> "本地 TXT"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(7.dp))
                 Text(
                     text = progressText(book),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                val progress = bookProgress(book)
+                if (progress != null) {
+                    Spacer(Modifier.height(5.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth(),
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    )
+                }
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Close, contentDescription = "移出书架")
             }
         }
     }
+}
+
+private fun bookProgress(book: Book): Float? {
+    val total = book.lastParagraphTotal
+    if (total <= 0) return null
+    val completed = if (book.kind == "online") book.lastIndex + 1 else book.lastIndex
+    return (completed.toFloat() / total).coerceIn(0f, 1f)
 }
 
 private fun progressText(book: Book): String {

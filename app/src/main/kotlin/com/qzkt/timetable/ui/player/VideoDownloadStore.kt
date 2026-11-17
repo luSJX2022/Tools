@@ -39,9 +39,15 @@ class VideoDownloadStore(private val context: Context) {
         fun open(): OutputStream = sink
 
         fun finish() {
-            runCatching { sink.flush() }
-            runCatching { sink.close() }
-            commit()
+            try {
+                sink.flush()
+                sink.close()
+                commit()
+            } catch (e: Exception) {
+                runCatching { sink.close() }
+                rollback()
+                throw e
+            }
         }
 
         fun abort() {
@@ -67,14 +73,21 @@ class VideoDownloadStore(private val context: Context) {
         }
         val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val uri = resolver.insert(collection, values) ?: throw IOException("系统没有让应用写音乐库")
-        val sink = resolver.openOutputStream(uri) ?: throw IOException("打不开音乐库里的新文件")
+        val sink = try {
+            resolver.openOutputStream(uri) ?: throw IOException("打不开音乐库里的新文件")
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
+        }
         return Target(
             uri = uri,
             location = Environment.DIRECTORY_MUSIC + "/" + FOLDER + "/" + fileName,
             sink = sink,
             commit = {
                 val done = ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }
-                resolver.update(uri, done, null, null)
+                if (resolver.update(uri, done, null, null) == 0) {
+                    throw IOException("音乐文件保存失败")
+                }
             },
             rollback = { runCatching { resolver.delete(uri, null, null) } },
         )
@@ -91,14 +104,21 @@ class VideoDownloadStore(private val context: Context) {
         }
         val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val uri = resolver.insert(collection, values) ?: throw IOException("系统没有让应用写媒体库")
-        val sink = resolver.openOutputStream(uri) ?: throw IOException("打不开媒体库里的新文件")
+        val sink = try {
+            resolver.openOutputStream(uri) ?: throw IOException("打不开媒体库里的新文件")
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
+        }
         return Target(
             uri = uri,
             location = Environment.DIRECTORY_MOVIES + "/" + FOLDER + "/" + fileName,
             sink = sink,
             commit = {
                 val done = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
-                resolver.update(uri, done, null, null)
+                if (resolver.update(uri, done, null, null) == 0) {
+                    throw IOException("视频文件保存失败")
+                }
             },
             rollback = { runCatching { resolver.delete(uri, null, null) } },
         )
@@ -106,7 +126,8 @@ class VideoDownloadStore(private val context: Context) {
 
     private fun inAppDir(fileName: String, directory: String = Environment.DIRECTORY_MOVIES): Target {
         val dir = context.getExternalFilesDir(directory) ?: context.filesDir
-        if (!dir.exists()) dir.mkdirs()
+        if (!dir.exists() && !dir.mkdirs()) throw IOException("无法创建下载目录")
+        if (!dir.isDirectory) throw IOException("下载路径不是目录")
         val file = File(dir, fileName)
         return Target(
             uri = Uri.fromFile(file),

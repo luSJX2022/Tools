@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -61,6 +64,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -81,25 +85,29 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.qzkt.timetable.data.anime.AnimeCategories
+import com.qzkt.timetable.data.anime.AnimeContentFilter
 import com.qzkt.timetable.data.anime.AnimeFavorite
 import com.qzkt.timetable.data.anime.AnimeItem
 import com.qzkt.timetable.data.anime.AnimeProgress
-import com.qzkt.timetable.ui.common.LiquidGlassBackdrop
 import kotlinx.coroutines.delay
 
-/** 影视中心底部悬浮导航的四个页签。 */
+/** 影视中心底部悬浮导航的页签。 */
 private enum class AnimeTab(val label: String) {
     HOME("推荐"),
     FILTER("筛选"),
     FAVORITES("番剧"),
     RANK("排行"),
+    HISTORY("历史"),
 }
 
 private fun AnimeTab.icon(): ImageVector = when (this) {
@@ -107,13 +115,22 @@ private fun AnimeTab.icon(): ImageVector = when (this) {
     AnimeTab.FILTER -> Icons.Default.Tune
     AnimeTab.FAVORITES -> Icons.Default.Favorite
     AnimeTab.RANK -> Icons.Default.EmojiEvents
+    AnimeTab.HISTORY -> Icons.Default.History
 }
 
+/* ---------------- 排版基线：各页统一用这几个值，避免各处 padding 不一致 ---------------- */
+private val PagePadding = 12.dp
+private val GridGapH = 10.dp
+private val GridGapV = 12.dp
+private val GridPadding = PaddingValues(horizontal = PagePadding, vertical = 8.dp)
+private val NavBarHeight = 62.dp
+private val NavBarVPad = 10.dp
+
 /**
- * 影视中心：首页推荐（banner + 观看历史 + 推荐网格）、筛选搜索、番剧收藏、排行四个页签，
+ * 影视中心：首页推荐（banner + 观看历史 + 推荐网格）、筛选搜索、番剧收藏、排行和历史五个页签，
  * 底部悬浮液态玻璃导航条。内容衬在 [LiquidGlassBackdrop] 上。
  *
- * 结构参考主流影视 App：顶部返回 + 搜索 / 历史 / 更多，底部四个页签悬浮不顶满宽度。
+ * 结构参考主流影视 App：顶部返回 + 搜索 / 历史 / 更多，底部页签悬浮不顶满宽度。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -129,6 +146,7 @@ fun AnimeScreen(
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
     val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
+    val filterAiContent by viewModel.filterAiContent.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
     var queryInput by rememberSaveable { mutableStateOf("") }
     var tab by rememberSaveable { mutableStateOf(AnimeTab.HOME) }
@@ -142,7 +160,6 @@ fun AnimeScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        LiquidGlassBackdrop()
         AnimeScaffoldContent(
             viewModel = viewModel,
             listState = listState,
@@ -151,6 +168,7 @@ fun AnimeScreen(
             favorites = favorites,
             searchHistory = searchHistory,
             progress = progress,
+            filterAiContent = filterAiContent,
             queryInput = queryInput,
             onQueryChange = { queryInput = it },
             tab = tab,
@@ -185,6 +203,7 @@ private fun AnimeScaffoldContent(
     favorites: List<AnimeFavorite>,
     searchHistory: List<String>,
     progress: Map<String, AnimeProgress>,
+    filterAiContent: Boolean,
     queryInput: String,
     onQueryChange: (String) -> Unit,
     tab: AnimeTab,
@@ -195,6 +214,11 @@ private fun AnimeScaffoldContent(
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     var showMenu by remember { mutableStateOf(false) }
+
+    // 悬浮导航浮在内容之上：底部留白 = 导航条高度 + 上下内边距 + 系统导航栏，
+    // 写死 92dp 在手势导航机型上会盖住最后一行。
+    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val contentBottom = NavBarHeight + NavBarVPad * 2 + navInset
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -211,7 +235,7 @@ private fun AnimeScaffoldContent(
                     IconButton(onClick = { onTabChange(AnimeTab.FILTER) }) {
                         Icon(Icons.Default.Search, contentDescription = "搜索")
                     }
-                    IconButton(onClick = { onTabChange(AnimeTab.FAVORITES) }) {
+                    IconButton(onClick = { onTabChange(AnimeTab.HISTORY) }) {
                         Icon(Icons.Default.History, contentDescription = "观看历史")
                     }
                     Box {
@@ -239,13 +263,18 @@ private fun AnimeScaffoldContent(
                 .padding(padding),
         ) {
             // 内容区和底栏之间留出悬浮导航的位置
-            Box(Modifier.fillMaxSize().padding(bottom = 92.dp)) {
+            Box(Modifier.fillMaxSize().padding(bottom = contentBottom)) {
                 when (tab) {
                     AnimeTab.HOME -> HomeTab(
                         feed = homeFeed,
                         favorites = favorites,
                         progress = progress,
+                        filterAiContent = filterAiContent,
                         onOpenDetail = onOpenDetail,
+                        onOpenProgress = { item ->
+                            viewModel.openDetail(item.id, item.source)
+                            onOpenDetail(item.id)
+                        },
                         onLoadMore = { viewModel.loadMoreHome() },
                     )
 
@@ -256,6 +285,7 @@ private fun AnimeScaffoldContent(
                         queryInput = queryInput,
                         onQueryChange = onQueryChange,
                         keyboard = keyboard,
+                        filterAiContent = filterAiContent,
                         onOpenDetail = onOpenDetail,
                     )
 
@@ -267,8 +297,19 @@ private fun AnimeScaffoldContent(
 
                     AnimeTab.RANK -> RankTab(
                         feed = latestFeed,
+                        filterAiContent = filterAiContent,
                         onOpenDetail = onOpenDetail,
                         onLoadMore = { viewModel.loadMoreLatest() },
+                    )
+
+                    AnimeTab.HISTORY -> HistoryGrid(
+                        progress = progress,
+                        favorites = favorites,
+                        onOpenDetail = { item ->
+                            viewModel.openDetail(item.id, item.source)
+                            onOpenDetail(item.id)
+                        },
+                        onClearHistory = viewModel::clearWatchHistory,
                     )
                 }
             }
@@ -291,57 +332,69 @@ private fun HomeTab(
     feed: AnimeFeedState,
     favorites: List<AnimeFavorite>,
     progress: Map<String, AnimeProgress>,
+    filterAiContent: Boolean,
     onOpenDetail: (id: String) -> Unit,
+    onOpenProgress: (AnimeProgress) -> Unit,
     onLoadMore: () -> Unit,
 ) {
     val gridState = rememberLazyGridState()
+    val visibleItems = remember(feed.items, filterAiContent) {
+        AnimeContentFilter.visible(feed.items, filterAiContent)
+    }
 
-    LaunchedEffect(gridState) {
+    LaunchedEffect(gridState, feed, visibleItems) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .collect { last ->
-                val s = feed
                 val total = gridState.layoutInfo.totalItemsCount
-                if (s.items.isNotEmpty() && !s.loading && s.hasMore && last >= total - 6) {
+                if (!feed.loading && feed.hasMore && visibleItems.isNotEmpty() && last >= total - 6) {
                     onLoadMore()
                 }
             }
     }
 
-    // 看到一半的收藏按最近观看排序，首页「观看历史」横滑展示
-    val continueWatching = favorites
-        .mapNotNull { fav ->
-            progress[AnimeViewModel.progressKey(fav.source, fav.id)]?.let { fav to it }
-        }
-        .sortedByDescending { it.second.updatedAt }
+    // 首页「观看历史」展示最近播放过的作品，不要求先收藏。
+    val favoriteByKey = favorites.associateBy { AnimeViewModel.progressKey(it.source, it.id) }
+    val continueWatching = progress.values
+        .sortedByDescending { it.updatedAt }
         .take(12)
+    // 横滑卡片宽度 = 下面 3 列网格的单格宽度，左右和纵向网格对齐
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val historyCardWidth = (screenWidth - PagePadding * 2 - GridGapH * 2) / 3
 
     var noticeVisible by rememberSaveable { mutableStateOf(true) }
 
     when {
-        feed.items.isEmpty() && feed.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        visibleItems.isEmpty() && feed.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
-        feed.items.isEmpty() && feed.error != null -> ErrorHint(
+        visibleItems.isEmpty() && feed.error != null -> ErrorHint(
             message = feed.error,
             onRetry = onLoadMore,
         )
-        feed.items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        visibleItems.isEmpty() -> Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
             Text(
-                "暂时没有内容，换个资源站试试",
+                if (filterAiContent && feed.items.isNotEmpty()) "本页内容被 AI 影视过滤规则隐藏" else "暂时没有内容，换个资源站试试",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (filterAiContent && feed.hasMore) {
+                TextButton(onClick = onLoadMore) { Text("继续筛选后续内容") }
+            }
         }
         else -> LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             state = gridState,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = GridPadding,
+            horizontalArrangement = Arrangement.spacedBy(GridGapH),
+            verticalArrangement = Arrangement.spacedBy(GridGapV),
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "banner", span = { GridItemSpan(3) }) {
-                BannerPager(items = feed.items.take(5), onOpenDetail = onOpenDetail)
+                BannerPager(items = visibleItems.take(5), onOpenDetail = onOpenDetail)
             }
             if (noticeVisible) {
                 item(key = "notice", span = { GridItemSpan(3) }) {
@@ -350,25 +403,27 @@ private fun HomeTab(
             }
             if (continueWatching.isNotEmpty()) {
                 item(key = "history_title", span = { GridItemSpan(3) }) {
-                    SectionTitle("观看历史")
+                    SectionHeader("观看历史")
                 }
                 item(key = "history_row", span = { GridItemSpan(3) }) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(continueWatching, key = { it.first.source + it.first.id }) { (fav, prog) ->
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(GridGapH)) {
+                        items(continueWatching, key = { it.source + it.id }) { item ->
+                            val favorite = favoriteByKey[AnimeViewModel.progressKey(item.source, item.id)]
                             ContinueCard(
-                                name = fav.name,
-                                pic = fav.pic,
-                                progressLabel = prog.episodeLabel,
-                                onClick = { onOpenDetail(fav.id) },
+                                name = item.name.ifBlank { favorite?.name ?: "影视记录" },
+                                pic = item.pic.ifBlank { favorite?.pic.orEmpty() },
+                                progressLabel = item.episodeLabel,
+                                onClick = { onOpenProgress(item) },
+                                width = historyCardWidth,
                             )
                         }
                     }
                 }
             }
             item(key = "recommend_title", span = { GridItemSpan(3) }) {
-                SectionTitle("推荐")
+                SectionHeader("推荐")
             }
-            items(feed.items, key = { it.source + it.id }) { item ->
+            items(visibleItems, key = { it.source + it.id }) { item ->
                 PosterCard(
                     name = item.name,
                     pic = item.pic,
@@ -376,13 +431,12 @@ private fun HomeTab(
                     onClick = { onOpenDetail(item.id) },
                 )
             }
+            if (feed.loading && feed.items.isNotEmpty()) {
+                item(key = "loading_more", span = { GridItemSpan(3) }) {
+                    LoadingMoreBar()
+                }
+            }
         }
-    }
-
-    if (feed.loading && feed.items.isNotEmpty()) {
-        LinearProgressIndicator(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        )
     }
 }
 
@@ -390,46 +444,56 @@ private fun HomeTab(
 @Composable
 private fun RankTab(
     feed: AnimeFeedState,
+    filterAiContent: Boolean,
     onOpenDetail: (id: String) -> Unit,
     onLoadMore: () -> Unit,
 ) {
     val gridState = rememberLazyGridState()
+    val visibleItems = remember(feed.items, filterAiContent) {
+        AnimeContentFilter.visible(feed.items, filterAiContent)
+    }
 
-    LaunchedEffect(gridState) {
+    LaunchedEffect(gridState, feed, visibleItems) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .collect { last ->
-                val s = feed
                 val total = gridState.layoutInfo.totalItemsCount
-                if (s.items.isNotEmpty() && !s.loading && s.hasMore && last >= total - 6) {
+                if (!feed.loading && feed.hasMore && visibleItems.isNotEmpty() && last >= total - 6) {
                     onLoadMore()
                 }
             }
     }
 
     when {
-        feed.items.isEmpty() && feed.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        visibleItems.isEmpty() && feed.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
-        feed.items.isEmpty() && feed.error != null -> ErrorHint(message = feed.error, onRetry = onLoadMore)
-        feed.items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        visibleItems.isEmpty() && feed.error != null -> ErrorHint(message = feed.error, onRetry = onLoadMore)
+        visibleItems.isEmpty() -> Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
             Text(
-                "暂时没有内容",
+                if (filterAiContent && feed.items.isNotEmpty()) "本页内容被 AI 影视过滤规则隐藏" else "暂时没有内容",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (filterAiContent && feed.hasMore) {
+                TextButton(onClick = onLoadMore) { Text("继续筛选后续内容") }
+            }
         }
         else -> LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             state = gridState,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = GridPadding,
+            horizontalArrangement = Arrangement.spacedBy(GridGapH),
+            verticalArrangement = Arrangement.spacedBy(GridGapV),
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "rank_title", span = { GridItemSpan(3) }) {
-                SectionTitle("排行 · 最近更新")
+                SectionHeader("排行 · 最近更新")
             }
-            items(feed.items, key = { it.source + it.id }) { item ->
+            items(visibleItems, key = { it.source + it.id }) { item ->
                 PosterCard(
                     name = item.name,
                     pic = item.pic,
@@ -437,13 +501,12 @@ private fun RankTab(
                     onClick = { onOpenDetail(item.id) },
                 )
             }
+            if (feed.loading && feed.items.isNotEmpty()) {
+                item(key = "loading_more", span = { GridItemSpan(3) }) {
+                    LoadingMoreBar()
+                }
+            }
         }
-    }
-
-    if (feed.loading && feed.items.isNotEmpty()) {
-        LinearProgressIndicator(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        )
     }
 }
 
@@ -457,6 +520,7 @@ private fun FilterTab(
     queryInput: String,
     onQueryChange: (String) -> Unit,
     keyboard: androidx.compose.ui.platform.SoftwareKeyboardController?,
+    filterAiContent: Boolean,
     onOpenDetail: (id: String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -486,7 +550,7 @@ private fun FilterTab(
             }),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 4.dp),
+                .padding(horizontal = PagePadding, vertical = 4.dp),
         )
 
         // 搜索框为空、又不在搜索结果里时，露出搜索历史：点一下直接搜
@@ -494,7 +558,7 @@ private fun FilterTab(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp),
+                    .padding(horizontal = PagePadding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -508,7 +572,7 @@ private fun FilterTab(
             FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp),
+                    .padding(horizontal = PagePadding),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 searchHistory.forEach { keyword ->
@@ -531,7 +595,7 @@ private fun FilterTab(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 14.dp, vertical = 4.dp),
+                .padding(horizontal = PagePadding, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FilterChip(
@@ -551,6 +615,7 @@ private fun FilterTab(
         BrowseGrid(
             listState = listState,
             viewModel = viewModel,
+            filterAiContent = filterAiContent,
             onOpenDetail = onOpenDetail,
         )
     }
@@ -677,7 +742,7 @@ private fun BannerPager(items: List<AnimeItem>, onOpenDetail: (id: String) -> Un
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(170.dp)
+            .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(16.dp)),
     ) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
@@ -716,7 +781,7 @@ private fun BannerPager(items: List<AnimeItem>, onOpenDetail: (id: String) -> Un
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = PagePadding, vertical = 12.dp),
                 )
             }
         }
@@ -779,13 +844,23 @@ private fun NoticeBar(onClose: () -> Unit) {
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(vertical = 4.dp),
-    )
+private fun SectionHeader(title: String, action: (@Composable () -> Unit)? = null) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.weight(1f))
+        action?.invoke()
+    }
+}
+
+/** 分页加载提示：作为网格最后一格，滚到底才出现（之前是叠在内容顶部的，位置是错的）。 */
+@Composable
+private fun LoadingMoreBar() {
+    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        LinearProgressIndicator(Modifier.width(72.dp))
+    }
 }
 
 /** 影视设置：源管理入口 + 收藏数据管理（右上角更多菜单打开）。 */
@@ -805,7 +880,29 @@ private fun AnimeSettingsDialog(
             Column {
                 val sourceKey by viewModel.sourceKey.collectAsStateWithLifecycle()
                 val sources by viewModel.sources.collectAsStateWithLifecycle()
+                val filterAiContent by viewModel.filterAiContent.collectAsStateWithLifecycle()
                 val current = sources.firstOrNull { it.key == sourceKey }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("过滤 AI 影视", fontSize = 14.sp)
+                        Text(
+                            text = "按 AI 标签、资源站分类及常见 AI 短剧标题模式过滤内容",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = filterAiContent,
+                        onCheckedChange = viewModel::setAiContentFilterEnabled,
+                    )
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -847,7 +944,7 @@ private fun AnimeSettingsDialog(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("影视收藏", fontSize = 14.sp)
                         Text(
-                            text = "本地保存的收藏与观看进度，" +
+                            text = "本地保存的收藏，观看历史独立管理；" +
                                 if (favoriteCount > 0) "当前 $favoriteCount 部" else "当前暂无",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -868,7 +965,7 @@ private fun AnimeSettingsDialog(
         AlertDialog(
             onDismissRequest = { confirmClearFavorites = false },
             title = { Text("清空收藏？") },
-            text = { Text("会删掉全部收藏和观看进度，不影响视频缓存。") },
+            text = { Text("会删掉全部影视收藏，不影响观看历史和视频缓存。") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.clearFavorites()
@@ -886,41 +983,69 @@ private fun AnimeSettingsDialog(
 private fun BrowseGrid(
     listState: AnimeListState,
     viewModel: AnimeViewModel,
+    filterAiContent: Boolean,
     onOpenDetail: (id: String) -> Unit,
 ) {
     val gridState = rememberLazyGridState()
+    val visibleItems = remember(listState.items, filterAiContent) {
+        AnimeContentFilter.visible(listState.items, filterAiContent)
+    }
 
     // 滑到底部附近自动翻下一页；从 StateFlow 里现读状态，避免闭包拿到旧值
-    LaunchedEffect(gridState) {
+    LaunchedEffect(gridState, listState, visibleItems) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .collect { last ->
                 val s = viewModel.list.value
-                if (s.items.isNotEmpty() && !s.loading && s.hasMore && last >= s.items.size - 6) {
+                if (!s.loading && s.hasMore && visibleItems.isNotEmpty() &&
+                    last >= gridState.layoutInfo.totalItemsCount - 6
+                ) {
                     viewModel.loadMore()
                 }
             }
     }
 
     when {
-        listState.items.isEmpty() && listState.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        visibleItems.isEmpty() && listState.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
-        listState.items.isEmpty() && listState.error != null -> ErrorHint(
+        visibleItems.isEmpty() && listState.error != null -> ErrorHint(
             message = listState.error,
             onRetry = { viewModel.loadMore() },
         )
-        listState.items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("没有找到相关影片", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        visibleItems.isEmpty() -> Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            // 本地分类是「从站点全部流里筛」的，前几页没命中很正常，别提示成「没有这部片」
+            val localCategory = listState.mode == AnimeListState.Mode.CATEGORY && listState.categoryId.isNotEmpty()
+            Text(
+                when {
+                    localCategory -> "「" + AnimeCategories.labelOf(listState.categoryId) + "」这一类暂时没命中，可以继续往后翻"
+                    filterAiContent && listState.items.isNotEmpty() -> "本页内容被 AI 影视过滤规则隐藏"
+                    else -> "没有找到相关影片"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (listState.hasMore) {
+                TextButton(onClick = { viewModel.loadMore() }) {
+                    Text(if (localCategory) "继续往后查找" else "继续筛选后续内容")
+                }
+            }
         }
         else -> LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             state = gridState,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = GridPadding,
+            horizontalArrangement = Arrangement.spacedBy(GridGapH),
+            verticalArrangement = Arrangement.spacedBy(GridGapV),
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(listState.items, key = { it.source + it.id }) { item ->
+            item(key = "browse_header", span = { GridItemSpan(3) }) {
+                SectionHeader("共 " + visibleItems.size + " 部")
+            }
+            items(visibleItems, key = { it.source + it.id }) { item ->
                 PosterCard(
                     name = item.name,
                     pic = item.pic,
@@ -928,13 +1053,12 @@ private fun BrowseGrid(
                     onClick = { onOpenDetail(item.id) },
                 )
             }
+            if (listState.loading && visibleItems.isNotEmpty()) {
+                item(key = "loading_more", span = { GridItemSpan(3) }) {
+                    LoadingMoreBar()
+                }
+            }
         }
-    }
-
-    if (listState.loading && listState.items.isNotEmpty()) {
-        LinearProgressIndicator(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        )
     }
 }
 
@@ -961,34 +1085,36 @@ private fun FavoritesGrid(
         }
         .sortedByDescending { it.second.updatedAt }
         .take(12)
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val historyCardWidth = (screenWidth - PagePadding * 2 - GridGapH * 2) / 3
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = GridPadding,
+        horizontalArrangement = Arrangement.spacedBy(GridGapH),
+        verticalArrangement = Arrangement.spacedBy(GridGapV),
         modifier = Modifier.fillMaxSize(),
     ) {
         if (continueWatching.isNotEmpty()) {
             item(key = "continue_title", span = { GridItemSpan(3) }) {
-                Text(
-                    "继续观看",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                )
+                SectionHeader("继续观看")
             }
             item(key = "continue_row", span = { GridItemSpan(3) }) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(GridGapH)) {
                     items(continueWatching, key = { it.first.source + it.first.id }) { (fav, prog) ->
                         ContinueCard(
                             name = fav.name,
                             pic = fav.pic,
                             progressLabel = prog.episodeLabel,
                             onClick = { onOpenDetail(fav.id) },
+                            width = historyCardWidth,
                         )
                     }
                 }
             }
+        }
+        item(key = "favorites_header", span = { GridItemSpan(3) }) {
+            SectionHeader("我的番剧 · " + favorites.size + " 部")
         }
         items(favorites, key = { it.source + it.id }) { fav ->
             // 有观看进度时把「看到第几集」并进角标，跟更新信息一起显示
@@ -1005,12 +1131,81 @@ private fun FavoritesGrid(
     }
 }
 
+@Composable
+private fun HistoryGrid(
+    progress: Map<String, AnimeProgress>,
+    favorites: List<AnimeFavorite>,
+    onOpenDetail: (AnimeProgress) -> Unit,
+    onClearHistory: () -> Unit,
+) {
+    var confirmClear by remember { mutableStateOf(false) }
+    val favoriteByKey = favorites.associateBy { AnimeViewModel.progressKey(it.source, it.id) }
+    val history = progress.values.sortedByDescending { it.updatedAt }
+
+    if (history.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "还没有观看记录，播放一集后会显示在这里",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        contentPadding = GridPadding,
+        horizontalArrangement = Arrangement.spacedBy(GridGapH),
+        verticalArrangement = Arrangement.spacedBy(GridGapV),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        item(key = "history_header", span = { GridItemSpan(3) }) {
+            SectionHeader("最近观看 · " + history.size + " 部") {
+                TextButton(onClick = { confirmClear = true }) { Text("清空") }
+            }
+        }
+        items(history, key = { it.source + it.id }) { item ->
+            val favorite = favoriteByKey[AnimeViewModel.progressKey(item.source, item.id)]
+            PosterCard(
+                name = item.name.ifBlank { favorite?.name ?: "影视记录" },
+                pic = item.pic.ifBlank { favorite?.pic.orEmpty() },
+                remark = item.episodeLabel.takeIf { it.isNotBlank() }?.let { "看到 $it" },
+                onClick = { onOpenDetail(item) },
+            )
+        }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("清空观看历史？") },
+            text = { Text("将删除所有影视观看记录，不会影响收藏。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onClearHistory()
+                    confirmClear = false
+                }) { Text("清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text("取消") }
+            },
+        )
+    }
+}
+
 /** 继续观看的小卡片：固定宽度的封面 + 片名 + 看到哪集。 */
 @Composable
-private fun ContinueCard(name: String, pic: String, progressLabel: String, onClick: () -> Unit) {
+private fun ContinueCard(
+    name: String,
+    pic: String,
+    progressLabel: String,
+    onClick: () -> Unit,
+    width: Dp = 106.dp,
+) {
     Column(
         modifier = Modifier
-            .width(106.dp)
+            .width(width)
             .clickable(onClick = onClick),
     ) {
         Box(
@@ -1045,7 +1240,7 @@ private fun ContinueCard(name: String, pic: String, progressLabel: String, onCli
         Spacer(Modifier.height(4.dp))
         Text(
             text = name,
-            fontSize = 12.sp,
+            style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

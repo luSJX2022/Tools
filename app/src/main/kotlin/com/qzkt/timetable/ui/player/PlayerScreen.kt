@@ -36,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -69,13 +70,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -93,6 +94,8 @@ import com.qzkt.timetable.data.anime.AnimePlayRequest
 import com.qzkt.timetable.ui.player.link.MediaDownloader
 import com.qzkt.timetable.ui.player.link.canDownloadDirectly
 import com.qzkt.timetable.ui.player.link.downloadableFileName
+import com.qzkt.timetable.ui.player.link.isDashManifest
+import com.qzkt.timetable.ui.player.link.isHlsPlaylist
 import com.qzkt.timetable.ui.player.link.readableSize
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -175,6 +178,7 @@ fun PlayerScreen(
 
     // 全屏时先把返回键吃掉：这时按返回是"退出全屏"，不是离开播放器
     BackHandler(enabled = fullscreen) { onFullscreenChange(false) }
+    BackHandler(enabled = !fullscreen) { onBack() }
 
     // 全屏 = 横屏 + 隐藏状态栏/导航栏；退出时原样还回去
     LaunchedEffect(fullscreen, activity) {
@@ -311,28 +315,39 @@ fun PlayerScreen(
         onDispose { c.removeListener(listener) }
     }
 
-    // 下载当前这一路到 Movies/qzkt/（HLS / DASH 播放列表下不了，会明确提示）
+    // 下载当前这一路到 Movies/qzkt/；普通 HLS 会合并为 MPEG-TS，DASH 暂不支持。
     fun downloadCurrent() {
         val source = currentSource ?: return
         if (downloading) return
-        if (!canDownloadDirectly(source)) {
-            downloadStatus = "这是 HLS / DASH 播放列表，需要合并分片才能成文件，这里下不了"
+        if (isDashManifest(source) || (!canDownloadDirectly(source) && !isHlsPlaylist(source))) {
+            downloadStatus = "暂不支持 DASH 播放列表下载"
             return
         }
         val fileName = downloadableFileName(resolvedTitle ?: currentName, source)
-        val target = runCatching { VideoDownloadStore(context).prepare(fileName) }.getOrNull()
-        if (target == null) {
-            downloadStatus = "下载失败：建不出文件"
+        val target = try {
+            VideoDownloadStore(context).prepare(fileName)
+        } catch (e: Exception) {
+            downloadStatus = "下载失败：无法创建文件（${e.message ?: e.javaClass.simpleName}）"
             return
         }
         scope.launch {
             downloading = true
             downloadProgress = null
-            downloadStatus = "正在下载 " + fileName + "…"
+            downloadStatus = if (isHlsPlaylist(source)) {
+                "正在下载并合并 HLS 分片 " + fileName + "…"
+            } else {
+                "正在下载 " + fileName + "…"
+            }
             try {
-                val bytes = downloader.download(source, StreamHeaders.current, target.open()) { written, total ->
+                val reportProgress: (Long, Long?) -> Unit = { written, total ->
                     // -1f 表示服务端没给总长度，用不确定进度条
-                    downloadProgress = total?.let { (written.toFloat() / it).coerceIn(0f, 1f) } ?: -1f
+                    val progress = total?.let { (written.toFloat() / it).coerceIn(0f, 1f) } ?: -1f
+                    scope.launch { downloadProgress = progress }
+                }
+                val bytes = if (isHlsPlaylist(source)) {
+                    downloader.downloadHls(source, StreamHeaders.current, target.open(), reportProgress)
+                } else {
+                    downloader.download(source, StreamHeaders.current, target.open(), reportProgress)
                 }
                 target.finish()
                 downloadStatus = "已保存到 " + target.location + "（" + readableSize(bytes) + "）"
@@ -455,6 +470,11 @@ fun PlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
             )
         },
     ) { padding ->
@@ -514,6 +534,35 @@ fun PlayerScreen(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
+
+                if (animeSession == null && !resolvedTitle.isNullOrBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onBack)
+                            .padding(horizontal = 18.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = resolvedTitle.orEmpty(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = "返回解析",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = "返回解析",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
 
                 animeSession?.let { session ->
                     Text(
@@ -588,10 +637,7 @@ fun PlayerScreen(
                 savedDescription?.takeIf { it.isNotBlank() }?.let { description ->
                 Spacer(Modifier.height(12.dp))
 
-                // 简介顶部：封面 + 片名，点一下返回封面页（影视详情 / 解析结果）
-                val coverUrl = animeSession?.pic
-                val headerName = animeSession?.name?.takeIf { it.isNotBlank() } ?: currentName
-                if (!coverUrl.isNullOrBlank() || !headerName.isNullOrBlank()) {
+                animeSession?.let { session ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -599,9 +645,9 @@ fun PlayerScreen(
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (!coverUrl.isNullOrBlank()) {
+                        session.pic?.takeIf { it.isNotBlank() }?.let { cover ->
                             AsyncImage(
-                                model = coverUrl,
+                                model = cover,
                                 contentDescription = "封面",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -613,7 +659,7 @@ fun PlayerScreen(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = headerName ?: "",
+                                text = session.name,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,

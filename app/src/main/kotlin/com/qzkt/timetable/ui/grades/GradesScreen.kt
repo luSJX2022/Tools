@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qzkt.timetable.jw.GradeInfo
 
@@ -44,6 +46,7 @@ fun GradesScreen(
     onBack: () -> Unit,
     /** 「该去应用内登录」类错误的出口：直接跳进 WebView 登录页。 */
     onOpenWebLogin: () -> Unit = {},
+    onOpenDrawer: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val errorMsg = state.error
@@ -55,6 +58,13 @@ fun GradesScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    onOpenDrawer?.let { openDrawer ->
+                        IconButton(onClick = openDrawer) {
+                            Icon(Icons.Default.Menu, contentDescription = "打开侧边菜单")
+                        }
                     }
                 },
             )
@@ -147,6 +157,8 @@ private fun GradesContent(grades: List<GradeInfo>, studentName: String?) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             ) {
                 Row(
@@ -175,6 +187,8 @@ private fun GradesContent(grades: List<GradeInfo>, studentName: String?) {
                 val course = courses[index]
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     Row(

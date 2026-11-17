@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.qzkt.timetable.AppContainer
+import com.qzkt.timetable.data.anime.AnimeCategories
 import com.qzkt.timetable.data.anime.AnimeFavorite
 import com.qzkt.timetable.data.anime.AnimePlayRequest
 import com.qzkt.timetable.data.anime.AnimeProgress
 import com.qzkt.timetable.data.anime.AnimeDetail
 import com.qzkt.timetable.data.anime.AnimeItem
+import com.qzkt.timetable.data.anime.AnimeItemList
 import com.qzkt.timetable.data.anime.AnimePage
 import com.qzkt.timetable.data.anime.AnimeStore
 import com.qzkt.timetable.data.anime.AnimeSource
@@ -17,6 +19,7 @@ import com.qzkt.timetable.data.anime.MacCmsSource
 import com.qzkt.timetable.data.anime.VideoSources
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import com.qzkt.timetable.data.PluginLog
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -95,17 +98,30 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
             ?: sources.value.firstOrNull()
             ?: VideoSources.byKey(_sourceKey.value)
 
-    /** 分类页签（显示名），跟随当前源变化。 */
-    val categories: List<Pair<String, String>> get() = source.categories
+    /**
+     * 筛选页的分类页签：用 App 自己定的分类规则（见 [AnimeCategories]），不再跟着影视站变。
+     */
+    val categories: List<Pair<String, String>> get() = AnimeCategories.chips()
 
     /** 自定义源（源管理页展示 / 删除用），含被停用的。 */
     val customSources: StateFlow<List<CustomAnimeSource>> = _customSources
 
     /** 被停用的源 key（源管理页开关用）。 */
     val disabledSources: StateFlow<Set<String>> = _disabledKeys
+    val filterAiContent: StateFlow<Boolean> = store.filterAiContent
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     private val _list = MutableStateFlow(AnimeListState())
     val list: StateFlow<AnimeListState> = _list
+
+    /**
+     * 列表代数：切分类/搜索/换源时自增。晚到的旧请求（代数不一致）直接丢弃，
+     * 否则旧分类的下一页会追加进新列表，造成重复 key 闪退。
+     */
+    private var listEpoch = 0
+
+    /** 当前列表请求；切分类/搜索时取消上一个，省得旧分类还在后台翻页。 */
+    private var listJob: kotlinx.coroutines.Job? = null
 
     /** 首页「推荐」feed：当前源第一个分类的分页列表（banner 也从这里取前几部）。 */
     private val _home = MutableStateFlow(AnimeFeedState())
@@ -147,7 +163,7 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
                 if (first || changed) {
                     first = false
                     resetToDefaultCategory()
-                    homeCategoryId = source.categories.first().second
+                    homeCategoryId = source.categories.firstOrNull()?.second ?: ""
                     _home.value = AnimeFeedState()
                     _latest.value = AnimeFeedState()
                     loadMoreHome()
@@ -171,7 +187,7 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
     private fun resetToDefaultCategory() {
         _list.value = AnimeListState(
             mode = AnimeListState.Mode.CATEGORY,
-            categoryId = source.categories.first().second,
+            categoryId = AnimeCategories.ALL_KEY,
         )
         loadPage(reset = true)
     }
@@ -185,9 +201,45 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
         loadPage(reset = true)
     }
 
+    /**
+     * 按本地分类取一页：站点「全部」流 + [AnimeCategories.filter]。
+     * 一页没命中就继续取下一页（最多 3 页），避免小分类首屏空白。
+     */
+    private suspend fun loadLocalCategoryPage(localKey: String, startPage: Int): AnimePage {
+        var page = startPage.coerceAtLeast(1)
+        var last: AnimePage? = null
+        repeat(3) {
+            val raw = fetchAllStream(page)
+            last = raw
+            val filtered = AnimeCategories.filter(raw.items, localKey)
+            if (localKey.isNotEmpty()) {
+                PluginLog.i(
+                    "影视",
+                    "本地分类「" + AnimeCategories.labelOf(localKey) + "」：第 " + page + " 页 " + raw.items.size + " 条，命中 " + filtered.size + " 条",
+                )
+            }
+            if (filtered.isNotEmpty() || page >= raw.totalPages) return raw.copy(items = filtered)
+            page++
+        }
+        val tail = last
+        return tail?.copy(items = AnimeCategories.filter(tail.items, localKey))
+            ?: AnimePage(page = startPage, totalPages = startPage, items = emptyList())
+    }
+
+    /** 站点「全部」流；有不支持空分类的源就退回它的第一个分类（结果仍会被本地规则筛）。 */
+    private suspend fun fetchAllStream(page: Int): AnimePage = runCatching {
+        source.list("", page)
+    }.getOrElse { e ->
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        val fallback = source.categories.firstOrNull()
+        PluginLog.w("影视", "源「" + source.name + "」不接受空分类，退回「" + (fallback?.first ?: "全部") + "」", e)
+        source.list(fallback?.second ?: "", page)
+    }
+
     fun search(keyword: String) {
         val query = keyword.trim()
         if (query.isEmpty()) return
+        PluginLog.i("影视", "搜索「" + query + "」")
         viewModelScope.launch { store.addSearchHistory(query) }
         _list.value = AnimeListState(mode = AnimeListState.Mode.SEARCH, query = query)
         loadPage(reset = true)
@@ -220,6 +272,10 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
         viewModelScope.launch { store.setSourceEnabled(key, enabled) }
     }
 
+    fun setAiContentFilterEnabled(enabled: Boolean) {
+        viewModelScope.launch { store.setAiContentFilterEnabled(enabled) }
+    }
+
     /** 添加自定义采集站。返回错误信息，null = 成功。 */
     fun addCustomSource(name: String, baseUrl: String): String? {
         val cleanName = name.trim()
@@ -244,23 +300,37 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
         if (_list.value.loading) return
         val state = _list.value
         val targetPage = if (reset) 1 else state.page + 1
+        if (reset) {
+            listEpoch++
+            listJob?.cancel()
+        }
+        val epoch = listEpoch
         _list.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        listJob = viewModelScope.launch {
             runCatching {
                 when (state.mode) {
                     AnimeListState.Mode.SEARCH -> source.search(state.query, targetPage)
-                    else -> source.list(state.categoryId, targetPage)
+                    // 分类页用本地规则：从站点「全部」流取数，再按我们自己的分类筛
+                    else -> loadLocalCategoryPage(state.categoryId, targetPage)
                 }
             }.onSuccess { page ->
+                // 期间又切了分类/搜索：这次结果已经过期，丢掉
+                if (epoch != listEpoch) return@launch
                 _list.update {
                     it.copy(
                         page = page.page,
                         totalPages = page.totalPages,
-                        items = if (reset) page.items else it.items + page.items,
+                        items = if (reset) {
+                            AnimeItemList.distinct(page.items)
+                        } else {
+                            AnimeItemList.merge(it.items, page.items)
+                        },
                         loading = false,
                     )
                 }
             }.onFailure { e ->
+                if (epoch != listEpoch) return@launch
+                PluginLog.e("影视", "列表加载失败", e)
                 _list.update { it.copy(loading = false, error = e.message ?: e.toString()) }
             }
         }
@@ -287,7 +357,7 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
      */
     private suspend fun fetchLatest(page: Int): AnimePage =
         runCatching { source.list("", page) }
-            .getOrElse { source.list(source.categories.first().second, page) }
+            .getOrElse { source.list(source.categories.firstOrNull()?.second ?: "", page) }
 
     /** 通用分页：首页 / 排行两个 feed 共用一套触底翻页逻辑。 */
     private fun loadFeed(
@@ -305,22 +375,44 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
                         it.copy(
                             page = page.page,
                             totalPages = page.totalPages,
-                            items = if (targetPage == 1) page.items else it.items + page.items,
+                            items = AnimeItemList.merge(it.items, page.items),
                             loading = false,
                         )
                     }
                 }
-                .onFailure { e -> feed.update { it.copy(loading = false, error = e.message ?: e.toString()) } }
+                .onFailure { e ->
+                    PluginLog.e("影视", "首页加载失败", e)
+                    feed.update { it.copy(loading = false, error = e.message ?: e.toString()) }
+                }
         }
     }
 
-    fun openDetail(id: String) {
-        if (_detail.value.detail?.id == id || _detail.value.loading) return
+    fun openDetail(id: String, sourceKey: String? = null) {
+        val currentDetail = _detail.value.detail
+        if (_detail.value.loading ||
+            (currentDetail?.id == id && (sourceKey == null || currentDetail.source == sourceKey))
+        ) return
+        PluginLog.i("影视", "打开详情 id=" + id + (sourceKey?.let { key -> " 源=" + key } ?: ""))
+        val target = sourceKey?.let { key ->
+            sources.value.firstOrNull { it.key == key }
+                ?: _customSources.value.firstOrNull { it.key == key }?.let { custom ->
+                    MacCmsSource(
+                        key = custom.key,
+                        name = custom.name,
+                        baseUrl = custom.baseUrl,
+                        categories = listOf("全部" to ""),
+                    )
+                }
+                ?: VideoSources.byKey(key).takeIf { it.key == key }
+        } ?: source
         _detail.value = AnimeDetailState(loading = true)
         viewModelScope.launch {
-            runCatching { source.detail(id) }
+            runCatching { target.detail(id) }
                 .onSuccess { _detail.value = AnimeDetailState(detail = it) }
-                .onFailure { e -> _detail.value = AnimeDetailState(error = e.message ?: e.toString()) }
+                .onFailure { e ->
+                    PluginLog.e("影视", "详情加载失败", e)
+                    _detail.value = AnimeDetailState(error = e.message ?: e.toString())
+                }
         }
     }
 
@@ -333,6 +425,10 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
         viewModelScope.launch { store.clearFavorites() }
     }
 
+    fun clearWatchHistory() {
+        viewModelScope.launch { store.clearProgress() }
+    }
+
     /** 点下一集：记进度 + 准备播放请求（带整部番的剧集，播放器页里可以直接选集）。 */
     fun requestPlay(detail: AnimeDetail, episodeIndex: Int) {
         val episode = detail.episodes.getOrNull(episodeIndex) ?: return
@@ -341,6 +437,8 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
                 AnimeProgress(
                     source = detail.source,
                     id = detail.id,
+                    name = detail.name,
+                    pic = detail.pic,
                     episodeIndex = episodeIndex,
                     episodeLabel = episode.label,
                     episodeCount = detail.episodes.size,
@@ -372,6 +470,8 @@ class AnimeViewModel(private val store: AnimeStore) : ViewModel() {
                 AnimeProgress(
                     source = request.source,
                     id = request.id,
+                    name = request.name,
+                    pic = request.pic.orEmpty(),
                     episodeIndex = request.currentIndex,
                     episodeLabel = label,
                     episodeCount = request.episodes.size,

@@ -23,15 +23,17 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Spellcheck
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import com.qzkt.timetable.data.AppSettings
 import com.qzkt.timetable.data.TimetableSnapshot
 import com.qzkt.timetable.ui.grid.computeCurrentWeek
+import com.qzkt.timetable.ui.common.GlassSectionHeader
 import java.time.LocalDate
 
 /** 工具页一个入口的全部展示信息：key 对应用 AppSettings 里的 toolOrder / hiddenToolKeys。 */
@@ -94,14 +97,17 @@ fun ToolsScreen(
     dynamicColor: Boolean = true,
     onUpdate: ((AppSettings) -> AppSettings) -> Unit = {},
     onInstallPlugin: (String) -> Unit = {},
-    onUninstallPlugin: (String, Boolean) -> Unit = { _, _ -> },
+    onUninstallPlugin: (String) -> Unit = {},
     onOpenAcademic: () -> Unit = {},
     onOpenResolve: () -> Unit = {},
     onOpenBooks: () -> Unit = {},
     onOpenAnime: () -> Unit = {},
-    /** 词达人解析：内置网页版解析器（离线题库 + 免费 AI）。 */
+    /** 四级词库：词汇查询、练习和错题复习。 */
     onOpenCidaren: () -> Unit = {},
     onOpenYxy: () -> Unit = {},
+    onOpenParcel: () -> Unit = {},
+    onOpenKeyCheck: () -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
 ) {
     val today = remember { LocalDate.now() }
     val currentWeek = remember(snapshot, today) { computeCurrentWeek(snapshot, today) }
@@ -164,9 +170,9 @@ fun ToolsScreen(
             ToolSpec(
                 key = "cidaren",
                 icon = Icons.Default.Spellcheck,
-                title = "词达人解析",
-                subtitle = { "粘贴题目出答案解析：离线题库 + 逐项分析 + 免费 AI" },
-                clearDataDescription = "错题、自定义词库、AI 设置和答题统计",
+                title = "四级词库",
+                subtitle = { "大学英语四级词汇查询、练习和错题复习" },
+                clearDataDescription = "错题、自定义词库和答题统计",
                 onClick = onOpenCidaren,
             ),
             ToolSpec(
@@ -177,6 +183,22 @@ fun ToolsScreen(
                 clearDataDescription = "加密保存的登录会话和本地 Keystore 密钥",
                 onClick = onOpenYxy,
             ),
+            ToolSpec(
+                key = "parcel",
+                icon = Icons.Default.LocalShipping,
+                title = "菜鸟包裹",
+                subtitle = { "本机保存运单号，手动整理包裹" },
+                clearDataDescription = "本机运单、拼多多登录态 Cookie 与取件网页数据",
+                onClick = onOpenParcel,
+            ),
+            ToolSpec(
+                key = "keycheck",
+                icon = Icons.Default.Security,
+                title = "P2P 密钥验证",
+                subtitle = { "离线检查 WireGuard 密钥、指纹与配置，可扫码导入" },
+                clearDataDescription = "不保存验证输入；仅保留当前页面内存中的内容",
+                onClick = onOpenKeyCheck,
+            ),
         ).associateBy { it.key }
     }
 
@@ -184,6 +206,11 @@ fun ToolsScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (editMode) "编辑首页" else "工具") },
+                navigationIcon = {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(Icons.Default.Menu, contentDescription = "打开侧边菜单")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { showPluginManager = true }) {
                         Icon(Icons.Default.Extension, contentDescription = "插件管理")
@@ -212,6 +239,10 @@ fun ToolsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (editMode) {
+                GlassSectionHeader(
+                    title = "自定义首页",
+                    subtitle = "调整常用工具的显示与排列",
+                )
                 ThemeEditCard(
                     themeMode = themeMode,
                     dynamicColor = dynamicColor,
@@ -256,6 +287,10 @@ fun ToolsScreen(
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
             } else {
+                GlassSectionHeader(
+                    title = "校园工具",
+                    subtitle = "常用功能一站进入",
+                )
                 order.forEach { key ->
                     val spec = specs[key] ?: return@forEach
                     if (spec.key !in hiddenEntries) {
@@ -297,40 +332,33 @@ private fun PluginManagerDialog(
     plugins: List<ToolSpec>,
     installedEntries: Set<String>,
     onInstall: (String) -> Unit,
-    onUninstall: (String, Boolean) -> Unit,
+    onUninstall: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var uninstallTarget by remember { mutableStateOf<ToolSpec?>(null) }
-    var clearData by remember(uninstallTarget) { mutableStateOf(false) }
     val target = uninstallTarget
 
     AlertDialog(
         onDismissRequest = {
             if (target != null) uninstallTarget = null else onDismiss()
         },
-        title = { Text(if (target == null) "插件管理" else "卸载${target.title}") },
+        title = { Text(if (target == null) "插件管理" else "删除${target.title}") },
         text = {
             if (target != null) {
                 Column {
-                    Text("卸载后会从工具首页移除并禁止进入；插件代码仍包含在当前 APK 中，可以随时重新安装。")
+                    Text("确认后会从本机移除该插件，并清除它保存的本地数据。此操作不可恢复。")
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "默认保留数据；重新安装后可以继续使用原有数据。",
+                        text = "将清除：${target.clearDataDescription}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = clearData, onCheckedChange = { clearData = it })
-                        Column {
-                            Text("同时清除该插件的数据")
-                            Text(
-                                target.clearDataDescription,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    Text(
+                        text = "插件程序仍随主应用安装包提供，删除后可重新安装；如需释放安装包空间，需卸载整个应用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             } else {
                 Column(
@@ -377,9 +405,9 @@ private fun PluginManagerDialog(
         confirmButton = {
             if (target != null) {
                 TextButton(onClick = {
-                    onUninstall(target.key, clearData)
+                    onUninstall(target.key)
                     uninstallTarget = null
-                }) { Text("确认卸载", color = MaterialTheme.colorScheme.error) }
+                }) { Text("删除插件及数据", color = MaterialTheme.colorScheme.error) }
             } else {
                 TextButton(onClick = onDismiss) { Text("完成") }
             }
@@ -435,6 +463,8 @@ private fun ThemeEditCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

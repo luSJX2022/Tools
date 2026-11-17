@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.AlertDialog
@@ -104,6 +105,7 @@ fun TimetableScreen(
     onRefresh: () -> Unit,
     onSetFirstMonday: (String) -> Unit,
     onOpenAccount: () -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
 ) {
     val weekCount = snapshot.weekCount.coerceAtLeast(1)
     val today = remember { LocalDate.now() }
@@ -136,6 +138,9 @@ fun TimetableScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(Icons.Default.Menu, contentDescription = "打开侧边菜单")
+                    }
                     IconButton(onClick = onRefresh, enabled = !busy) {
                         Icon(Icons.Default.Refresh, contentDescription = "立即同步")
                     }

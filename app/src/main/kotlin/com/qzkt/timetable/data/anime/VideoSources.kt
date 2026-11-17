@@ -114,6 +114,17 @@ class MacCmsSource(
                     name = name,
                     pic = it.optString("vod_pic").trim(),
                     remark = it.optString("vod_remark").trim(),
+                    filterMetadata = listOf(
+                        "type_name",
+                        "vod_type_name",
+                        "vod_class",
+                        "vod_tag",
+                        "vod_actor",
+                        "vod_director",
+                        "vod_sub",
+                        "vod_blurb",
+                    ).joinToString(" ") { field -> it.optString(field).trim() }
+                        .trim(),
                 )
             }
         } ?: emptyList()

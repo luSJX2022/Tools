@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,6 +24,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -190,7 +196,7 @@ private fun OnlineReader(book: Book, viewModel: BookViewModel, onBack: () -> Uni
 
     val bgColor = if (night) Color(0xFF121212) else MaterialTheme.colorScheme.background
     val textColor = if (night) Color(0xFFC8C8C8) else MaterialTheme.colorScheme.onBackground
-    val barColor = if (night) Color(0xFF1D1D1D) else MaterialTheme.colorScheme.surfaceVariant
+    val barColor = if (night) Color(0xF21D1D1D) else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f)
 
     // 换章（或重试）时重新拉正文；目录顺路拉一次
     LaunchedEffect(chapterIndex, reloadTick) {
@@ -341,42 +347,53 @@ private fun ReaderScaffold(
     val barColor = if (night) Color(0xFF1D1D1D) else MaterialTheme.colorScheme.surfaceVariant
     val textColor = if (night) Color(0xFFC8C8C8) else MaterialTheme.colorScheme.onBackground
     val bgColor = if (night) Color(0xFF121212) else MaterialTheme.colorScheme.background
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     Box(modifier = Modifier.fillMaxSize().background(bgColor)) {
         content(
             androidx.compose.foundation.layout.PaddingValues(
-                top = READER_BAR_HEIGHT + 6.dp,
+                top = statusBarHeight + READER_BAR_HEIGHT + 6.dp,
                 bottom = READER_BAR_HEIGHT + 6.dp,
             ),
         )
 
-        Row(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
+                .statusBarsPadding()
                 .align(Alignment.TopCenter),
-            verticalAlignment = Alignment.CenterVertically,
+            color = barColor,
+            shadowElevation = 8.dp,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = textColor)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = textColor)
+                }
+                Text(
+                    text = title,
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 16.dp),
+                )
             }
-            Text(
-                text = title,
-                color = textColor,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(end = 16.dp),
-            )
         }
 
-        Row(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
                 .align(Alignment.BottomCenter),
-            verticalAlignment = Alignment.CenterVertically,
+            color = barColor,
+            shadowElevation = 8.dp,
         ) {
-            bottomBar()
+            Row(
+                modifier = Modifier.navigationBarsPadding(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                bottomBar()
+            }
         }
     }
 }

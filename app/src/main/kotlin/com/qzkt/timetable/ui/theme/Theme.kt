@@ -3,6 +3,8 @@ package com.qzkt.timetable.ui.theme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -10,6 +12,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import android.os.Build
 
 /** 主题模式：跟随系统 / 强制浅色 / 强制深色。 */
@@ -39,6 +45,25 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = Color(0xFF2A2F38),
 )
 
+private val LiquidGlassShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(14.dp),
+    medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(26.dp),
+    extraLarge = RoundedCornerShape(34.dp),
+)
+
+private val LiquidGlassTypography = Typography().let { base ->
+    base.copy(
+        headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp),
+        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
+        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp),
+        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        titleSmall = base.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+    )
+}
+
 @Composable
 fun QzktTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -57,7 +82,12 @@ fun QzktTheme(
         else -> LightColors
     }
 
-    MaterialTheme(colorScheme = baseScheme.withGlassSurfaces(dark), content = content)
+    MaterialTheme(
+        colorScheme = baseScheme.withGlassSurfaces(dark),
+        typography = LiquidGlassTypography,
+        shapes = LiquidGlassShapes,
+        content = content,
+    )
 }
 
 private fun ColorScheme.withGlassSurfaces(dark: Boolean): ColorScheme {

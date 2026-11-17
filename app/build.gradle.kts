@@ -12,8 +12,8 @@ android {
         applicationId = "com.qzkt.timetable"
         minSdk = 26
         targetSdk = 37
-        versionCode = 63
-        versionName = "1.0.63"
+        versionCode = 64
+        versionName = "1.0.64"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
@@ -48,7 +48,11 @@ android {
 
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += setOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                // KeyCheck only uses BC's X25519 primitives; Picnic's large parameter tables are unused.
+                "/org/bouncycastle/pqc/crypto/picnic/lowmc*.bin.properties",
+            )
         }
     }
 
@@ -94,6 +98,12 @@ dependencies {
     // 加上这两个模块后，DefaultMediaSourceFactory 会按地址后缀自动选解析器。
     implementation(libs.media3.hls)
     implementation(libs.media3.dash)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.core)
+    implementation(libs.bouncycastle.provider)
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json)

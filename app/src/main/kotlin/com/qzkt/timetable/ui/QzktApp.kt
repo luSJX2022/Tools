@@ -1,5 +1,6 @@
 package com.qzkt.timetable.ui
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,19 +10,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -40,6 +50,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.launch
 import com.qzkt.timetable.data.AppSettings
 import com.qzkt.timetable.data.anime.AnimeFavorite
 import com.qzkt.timetable.ui.account.AccountScreen
@@ -51,7 +62,10 @@ import com.qzkt.timetable.ui.debug.DebugScreen
 import com.qzkt.timetable.ui.grid.TimetableScreen
 import com.qzkt.timetable.ui.player.PlayerScreen
 import com.qzkt.timetable.ui.player.ResolveScreen
+import com.qzkt.timetable.ui.tools.ParcelPickupScreen
+import com.qzkt.timetable.ui.tools.KeyCheckScreen
 import com.qzkt.timetable.ui.settings.SettingsScreen
+import com.qzkt.timetable.ui.settings.AppLogsScreen
 import com.qzkt.timetable.ui.setup.SetupScreen
 import com.qzkt.timetable.ui.academic.AcademicScreen
 import com.qzkt.timetable.ui.academic.CourseSelectScreen
@@ -90,22 +104,27 @@ private object Routes {
     /** 影视源管理：开关启停、添加自定义采集站。 */
     const val ANIME_SOURCE = "anime_source"
     const val SETTINGS = "settings"
+    const val APP_LOGS = "app_logs"
     const val DEBUG = "debug"
     const val SETUP = "setup"
     const val WEB = "web"
-    /** 词达人解析：内置的题目解析器（原生 Compose 实现），见 cidaren/CidarenScreen.kt。 */
+    /** 四级词库与练习（原生 Compose 实现），见 cidaren/CidarenScreen.kt。 */
     const val CIDAREN = "cidaren"
     /** 易校园：校园卡余额与消费明细。 */
     const val YXY = "yxy"
+    /** 拼多多包裹取件页面。 */
+    const val PARCEL = "parcel"
+    /** 离线 P2P / WireGuard 密钥校验工具。 */
+    const val KEYCHECK = "keycheck"
     const val ACCOUNT = "account"
 }
 
 private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
 
-// 底部页签只剩「工具」和「设置」：课表、播放器变成了工具页里的两个入口。
+// 教务页占据原设置页签位置，设置从侧边抽屉进入。
 private val TABS = listOf(
     BottomTab(Routes.TOOLS, "工具", Icons.Default.Widgets),
-    BottomTab(Routes.SETTINGS, "设置", Icons.Default.Settings),
+    BottomTab(Routes.ACADEMIC, "教务", Icons.Default.CalendarMonth),
 )
 
 @Composable
@@ -142,8 +161,42 @@ fun QzktApp(
     // 导航栈不随 configured 重建：首次启动直接落到工具页，配置教务账号是从课表页进去的
     // （配置成功后由 Routes.SETUP 那段自己退回上一页，见下面的 LaunchedEffect）。
     val navController = rememberNavController()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    fun openDrawer() {
+        scope.launch { drawerState.open() }
+    }
+
+    fun navigateTopLevel(route: String) {
+        scope.launch { drawerState.close() }
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    fun returnToAnimeCover() {
+        val session = animeSession
+        if (session == null || session.id.isBlank()) {
+            navController.popBackStack()
+            return
+        }
+        val previousEntry = navController.previousBackStackEntry
+        if (
+            previousEntry?.destination?.route == Routes.ANIME_DETAIL &&
+            previousEntry.arguments?.getString("vodId") == session.id
+        ) {
+            navController.popBackStack()
+        } else {
+            navController.navigate("anime_detail/${Uri.encode(session.id)}") {
+                popUpTo(Routes.PLAYER) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
     val installedPlugins = AppSettings.normalizeInstalledToolKeys(settings.installedToolKeys).toSet()
     val currentPlugin = when {
         currentRoute == Routes.ACADEMIC ||
@@ -157,6 +210,8 @@ fun QzktApp(
         currentRoute == Routes.ANIME || currentRoute?.startsWith("anime_detail/") == true -> "anime"
         currentRoute == Routes.CIDAREN -> "cidaren"
         currentRoute == Routes.YXY -> "yxy"
+        currentRoute == Routes.PARCEL -> "parcel"
+        currentRoute == Routes.KEYCHECK -> "keycheck"
         else -> null
     }
     LaunchedEffect(currentRoute, installedPlugins) {
@@ -170,10 +225,42 @@ fun QzktApp(
             }
         }
     }
-    // 底部页签只在两个顶级页（工具 / 设置）显示：教务、影视、链接解析、图书
-    // 及其详情、播放、账号等子页一律隐藏，把屏幕留给内容本身。
-    val showBottomBar = currentRoute == Routes.TOOLS || currentRoute == Routes.SETTINGS
+    // 全局底栏只在工具首页显示；教务页使用自己的课表 / 成绩 / 选课导航。
+    val showBottomBar = currentRoute == Routes.TOOLS
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Text(
+                    "校园工具",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.Widgets, contentDescription = null) },
+                    label = { Text("工具") },
+                    selected = currentRoute == Routes.TOOLS,
+                    onClick = { navigateTopLevel(Routes.TOOLS) },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.School, contentDescription = null) },
+                    label = { Text("教务") },
+                    selected = currentRoute == Routes.ACADEMIC,
+                    onClick = { navigateTopLevel(Routes.ACADEMIC) },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("设置") },
+                    selected = currentRoute == Routes.SETTINGS,
+                    onClick = { navigateTopLevel(Routes.SETTINGS) },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
+        },
+    ) {
     Scaffold(
         contentWindowInsets = if (playerFullscreen) {
             WindowInsets(0.dp)
@@ -308,6 +395,7 @@ fun QzktApp(
                         entryOrder = settings.toolOrder,
                         themeMode = settings.themeMode,
                         dynamicColor = settings.dynamicColor,
+                        onOpenDrawer = ::openDrawer,
                         onUpdate = viewModel::saveSettings,
                         onInstallPlugin = viewModel::installPlugin,
                         onUninstallPlugin = viewModel::uninstallPlugin,
@@ -317,6 +405,8 @@ fun QzktApp(
                         onOpenAnime = { navController.navigate(Routes.ANIME) },
                         onOpenCidaren = { navController.navigate(Routes.CIDAREN) },
                         onOpenYxy = { navController.navigate(Routes.YXY) },
+                        onOpenParcel = { navController.navigate(Routes.PARCEL) },
+                        onOpenKeyCheck = { navController.navigate(Routes.KEYCHECK) },
                     )
                 }
 
@@ -326,6 +416,14 @@ fun QzktApp(
 
                 composable(Routes.YXY) {
                     YxyScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Routes.PARCEL) {
+                    ParcelPickupScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Routes.KEYCHECK) {
+                    KeyCheckScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable(Routes.GRADES) {
@@ -348,6 +446,7 @@ fun QzktApp(
                                 onRefresh = viewModel::refresh,
                                 onSetFirstMonday = viewModel::setFirstMonday,
                                 onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                                onOpenDrawer = ::openDrawer,
                             )
                         },
                         gradesContent = {
@@ -355,6 +454,7 @@ fun QzktApp(
                                 viewModel = gradesViewModel,
                                 onBack = { navController.popBackStack() },
                                 onOpenWebLogin = { navController.navigate(Routes.WEB) },
+                                onOpenDrawer = ::openDrawer,
                             )
                         },
                         courseSelectContent = {
@@ -364,6 +464,7 @@ fun QzktApp(
                                 onSaveEntryUrl = viewModel::saveCourseSelectUrl,
                                 onBack = { navController.popBackStack() },
                                 onOpenWebLogin = { navController.navigate(Routes.WEB) },
+                                onOpenDrawer = ::openDrawer,
                             )
                         },
                     )
@@ -472,7 +573,7 @@ fun QzktApp(
                                 )
                             }
                         },
-                        onBack = { navController.popBackStack() },
+                        onBack = ::returnToAnimeCover,
                     )
                 }
 
@@ -482,7 +583,13 @@ fun QzktApp(
                         onUpdate = viewModel::saveSettings,
                         onExportBackup = viewModel::exportBackup,
                         onImportBackup = viewModel::importBackup,
+                        onOpenDrawer = ::openDrawer,
+                        onOpenLogs = { navController.navigate(Routes.APP_LOGS) },
                     )
+                }
+
+                composable(Routes.APP_LOGS) {
+                    AppLogsScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable(Routes.DEBUG) {
@@ -491,6 +598,7 @@ fun QzktApp(
                         onBack = { navController.popBackStack() },
                     )
                 }
+            }
             }
         }
     }

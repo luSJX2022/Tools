@@ -1,6 +1,7 @@
 package com.qzkt.timetable.data.backup
 
 import com.qzkt.timetable.data.AppSettings
+import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.data.SettingsStore
 import com.qzkt.timetable.data.anime.AnimeFavorite
 import com.qzkt.timetable.data.anime.AnimeProgress
@@ -57,6 +58,7 @@ class BackupManager(
 
     /** 用备份覆盖本地数据（整体替换，不做合并）。 */
     suspend fun restore(data: BackupData) {
+        PluginLog.i("备份", "恢复备份：导出于 " + data.exportedAt)
         val settings = data.settings
         if (settings != null) settingsStore.update { settings }
         bookStore.restore(data.bookSourceKey, data.readerFontSize, data.readerNight, data.books)

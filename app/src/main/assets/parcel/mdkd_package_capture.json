@@ -1,0 +1,14 @@
+{
+  "sourceUrl": "https://mdkd.pinduoduo.com/weixin/package?entry_source=24&p_channel=0&refer_page_name=download&refer_page_id=10238_1794645770620_qk0jmfhvmt&refer_page_sn=10238",
+  "capturedAt": "2026-10-31 04:48:13 UTC",
+  "station": "上马海都学院店",
+  "hint": "你有1个包裹正在运输中",
+  "parcels": [
+    {
+      "name": "上马海都学院店",
+      "trackingNumber": "465801058426354",
+      "carrier": "韵达快递",
+      "operateTime": "2026-10-30 18:24:58"
+    }
+  ]
+}

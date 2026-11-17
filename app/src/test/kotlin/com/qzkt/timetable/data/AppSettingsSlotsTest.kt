@@ -82,7 +82,7 @@ class AppSettingsSlotsTest {
         val saved = listOf("anime", "ghost", "timetable")
         val order = AppSettings.displayToolOrder(saved)
         // 下线的 ghost 和被教务收编的 timetable 被丢掉，剩下的按存的顺序，新入口排到末尾
-        assertEquals(listOf("anime", "academic", "book", "resolve", "cidaren", "yxy"), order)
+        assertEquals(listOf("anime", "academic", "book", "resolve", "cidaren", "yxy", "parcel", "keycheck"), order)
         // 结果一定是全量 key，不漏不重
         assertEquals(AppSettings.DEFAULT_TOOL_ORDER.toSet(), order.toSet())
     }
@@ -123,5 +123,25 @@ class AppSettingsSlotsTest {
         val reinstalled = uninstalled.withPluginInstalled("anime")
         assertTrue("anime" in reinstalled.installedToolKeys)
         assertEquals(original.username, reinstalled.username)
+    }
+
+    @Test
+    fun `取快递工具可作为可安装卸载插件管理`() {
+        val settings = AppSettings()
+        val uninstalled = settings.withPluginUninstalled("parcel")
+
+        assertTrue("parcel" in settings.installedToolKeys)
+        assertTrue("parcel" !in uninstalled.installedToolKeys)
+        assertTrue("parcel" in uninstalled.withPluginInstalled("parcel").installedToolKeys)
+    }
+
+    @Test
+    fun `KeyCheck 可作为可安装卸载插件管理`() {
+        val settings = AppSettings()
+        val uninstalled = settings.withPluginUninstalled("keycheck")
+
+        assertTrue("keycheck" in settings.installedToolKeys)
+        assertTrue("keycheck" !in uninstalled.installedToolKeys)
+        assertTrue("keycheck" in uninstalled.withPluginInstalled("keycheck").installedToolKeys)
     }
 }

@@ -3,6 +3,8 @@ package com.qzkt.timetable
 import android.app.Application
 import android.content.Context
 import com.qzkt.timetable.data.SettingsStore
+import com.qzkt.timetable.data.AppLogStore
+import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.data.TimetableRepository
 import com.qzkt.timetable.data.TimetableStore
 import com.qzkt.timetable.data.anime.AnimeStore
@@ -67,6 +69,27 @@ class QzApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            try {
+                val trace = error.stackTraceToString()
+                AppLogStore(this).record(
+                    level = "ERROR",
+                    tag = "Crash",
+                    message = "未捕获异常，线程=${thread.name}\n${trace.take(16_000)}",
+                )
+            } catch (logError: Exception) {
+                android.util.Log.e("AppLog", "记录崩溃日志失败", logError)
+            }
+            previousHandler?.uncaughtException(thread, error)
+        }
+        try {
+            AppLogStore(this).record("INFO", "App", "应用进程启动")
+            // 插件日志统一写进同一份 app.log（按插件名打 tag）
+            PluginLog.install(this)
+        } catch (logError: Exception) {
+            android.util.Log.e("AppLog", "记录应用启动日志失败", logError)
+        }
         // 主动创建一次，把通知渠道在进程启动时就注册好
         container
     }

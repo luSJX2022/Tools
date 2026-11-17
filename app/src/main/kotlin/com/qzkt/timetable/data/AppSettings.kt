@@ -35,7 +35,7 @@ data class AppSettings(
     /** 番剧一集放完是否自动接着放下一集。 */
     val autoPlayNext: Boolean = true,
     /**
-     * 工具页（首页）要隐藏的入口 key：`academic` / `book` / `resolve` / `anime` / `cidaren` / `yxy`。
+     * 工具页（首页）要隐藏的入口 key：`academic` / `book` / `resolve` / `anime` / `cidaren` / `yxy` / `parcel` / `keycheck`。
      *
      * 存「隐藏」而不是「显示」：列表缺省为空，老版本存的 JSON 没这个字段，
      * 反序列化出来自然等于全显示，不用做迁移。
@@ -91,7 +91,8 @@ data class AppSettings(
 
     companion object {
         /** 工具页全部入口 key 的默认顺序。 */
-        val DEFAULT_TOOL_ORDER: List<String> = listOf("academic", "book", "resolve", "anime", "cidaren", "yxy")
+        val DEFAULT_TOOL_ORDER: List<String> =
+            listOf("academic", "book", "resolve", "anime", "cidaren", "yxy", "parcel", "keycheck")
 
         /**
          * 把存的 toolOrder 清洗成可显示顺序：丢掉已下线的 key、

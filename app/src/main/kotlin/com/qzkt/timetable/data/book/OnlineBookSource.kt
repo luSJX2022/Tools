@@ -454,6 +454,198 @@ internal fun extractGutenbergText(html: String): String {
     return content.textWithBreaks().trim()
 }
 
+/**
+ * Chinese public-domain and openly licensed texts hosted by Internet Archive.
+ * Only items with an explicitly recognized open license and a plain-text OCR file are readable.
+ */
+class InternetArchiveChineseSource(
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .build(),
+    private val archiveUrl: String = "https://archive.org",
+) : CategorizedBookSource {
+
+    override val key = "internet-archive-zh"
+    override val name = "互联网档案馆（中文公版）"
+    override val categories = listOf("中文公版与开放授权" to "open-zh")
+
+    override suspend fun search(keyword: String): List<OnlineBook> = withContext(Dispatchers.IO) {
+        require(keyword.isNotBlank()) { "请输入书名或作者" }
+        fetchPage("mediatype:texts AND language:chi AND ${escapeArchiveQuery(keyword.trim())}", 1).books
+    }
+
+    override suspend fun categoryBooks(categoryId: String, page: Int): OnlineBookPage =
+        withContext(Dispatchers.IO) {
+            require(categoryId == "open-zh") { "未知分类" }
+            require(page >= 1) { "页码无效" }
+            fetchPage("mediatype:texts AND language:chi", page)
+        }
+
+    override suspend fun catalog(bookUrl: String): List<OnlineChapter> = withContext(Dispatchers.IO) {
+        val identifier = archiveIdentifier(bookUrl)
+        val metadata = getJson("$archiveUrl/metadata/${Uri.encode(identifier)}")
+        val item = parseInternetArchiveMetadata(metadata)
+        val chapterUrl = "$archiveUrl/download/${Uri.encode(identifier)}/${Uri.encode(item.textFileName)}"
+        listOf(OnlineChapter("全文", chapterUrl))
+    }
+
+    override suspend fun content(chapter: OnlineChapter): String = withContext(Dispatchers.IO) {
+        val url = Uri.parse(chapter.url)
+        require(
+            url.scheme == "https" && url.host == "archive.org" &&
+                url.pathSegments.size == 3 && url.pathSegments[0] == "download",
+        ) { "互联网档案馆正文链接无效" }
+        val text = getText(chapter.url, MAX_TEXT_BYTES)
+        extractInternetArchiveText(text).ifBlank { error("书籍正文为空") }
+    }
+
+    private fun fetchPage(query: String, page: Int): OnlineBookPage {
+        val url = Uri.parse("$archiveUrl/advancedsearch.php")
+            .buildUpon()
+            .appendQueryParameter("q", query)
+            .appendQueryParameter("fl[]", "identifier")
+            .appendQueryParameter("fl[]", "title")
+            .appendQueryParameter("fl[]", "creator")
+            .appendQueryParameter("fl[]", "description")
+            .appendQueryParameter("fl[]", "rights")
+            .appendQueryParameter("fl[]", "licenseurl")
+            .appendQueryParameter("rows", PAGE_SIZE.toString())
+            .appendQueryParameter("page", page.toString())
+            .appendQueryParameter("output", "json")
+            .build()
+            .toString()
+        val response = getJson(url)
+        return parseInternetArchiveSearchPage(response.toString(), page, PAGE_SIZE)
+    }
+
+    private fun getJson(url: String): JSONObject = JSONObject(getText(url, MAX_METADATA_BYTES))
+
+    private fun getText(url: String, maxBytes: Int): String =
+        client.newCall(
+            Request.Builder()
+                .url(url)
+                .header("User-Agent", "Tools Android app (open-access book reader)")
+                .build(),
+        ).execute().use { response ->
+            check(response.isSuccessful) { "互联网档案馆请求失败（HTTP ${response.code}）" }
+            val body = response.body
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            body.byteStream().use { input ->
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    check(output.size() + count <= maxBytes) { "书籍文本超过可读取大小限制" }
+                    output.write(buffer, 0, count)
+                }
+            }
+            output.toString(StandardCharsets.UTF_8.name())
+        }
+
+    private fun archiveIdentifier(bookUrl: String): String {
+        val uri = Uri.parse(bookUrl)
+        require(
+            uri.scheme == "https" && uri.host == "archive.org" &&
+                uri.pathSegments.size == 2 && uri.pathSegments[0] == "details",
+        ) { "互联网档案馆书籍链接无效" }
+        return uri.pathSegments[1]
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 50
+        const val MAX_METADATA_BYTES = 2 * 1024 * 1024
+        const val MAX_TEXT_BYTES = 8 * 1024 * 1024
+    }
+}
+
+internal data class InternetArchiveMetadata(
+    val title: String,
+    val author: String?,
+    val textFileName: String,
+)
+
+internal fun parseInternetArchiveSearchPage(
+    body: String,
+    page: Int,
+    pageSize: Int,
+): OnlineBookPage {
+    val response = JSONObject(body).optJSONObject("response") ?: error("互联网档案馆搜索响应异常")
+    val docs = response.optJSONArray("docs") ?: JSONArray()
+    val books = (0 until docs.length()).mapNotNull { index ->
+        val item = docs.optJSONObject(index) ?: return@mapNotNull null
+        val identifier = item.optString("identifier").takeIf(String::isNotBlank) ?: return@mapNotNull null
+        val title = item.optString("title").trim().ifBlank { return@mapNotNull null }
+        if (!isInternetArchiveOpenLicense(item.optString("rights"), item.optString("licenseurl"))) {
+            return@mapNotNull null
+        }
+        OnlineBook(
+            sourceKey = "internet-archive-zh",
+            bookUrl = "https://archive.org/details/${Uri.encode(identifier)}",
+            name = title,
+            author = archiveTextField(item.opt("creator")),
+            cover = "https://archive.org/services/img/${Uri.encode(identifier)}",
+            description = archiveTextField(item.opt("description")),
+        )
+    }
+    val start = response.optInt("start", (page - 1) * pageSize)
+    val total = response.optInt("numFound", start + docs.length())
+    return OnlineBookPage(books, start + docs.length() < total)
+}
+
+internal fun parseInternetArchiveMetadata(body: JSONObject): InternetArchiveMetadata {
+    val metadata = body.optJSONObject("metadata") ?: error("互联网档案馆书籍信息缺失")
+    if (!isInternetArchiveOpenLicense(metadata.optString("rights"), metadata.optString("licenseurl"))) {
+        error("该书未标注为公版或开放授权，暂不提供在线阅读")
+    }
+    val files = body.optJSONArray("files") ?: JSONArray()
+    val textFile = (0 until files.length())
+        .mapNotNull { files.optJSONObject(it) }
+        .mapNotNull { file ->
+            val name = file.optString("name")
+            if (name.endsWith("_djvu.txt", ignoreCase = true)) {
+                name to 0
+            } else if (name.endsWith(".txt", ignoreCase = true) &&
+                file.optString("format").contains("text", ignoreCase = true)
+            ) {
+                name to 1
+            } else {
+                null
+            }
+        }
+        .minByOrNull { it.second }
+        ?.first
+        ?: error("该书没有可读取的纯文本版本")
+    return InternetArchiveMetadata(
+        title = metadata.optString("title").ifBlank { "互联网档案馆图书" },
+        author = archiveTextField(metadata.opt("creator")),
+        textFileName = textFile,
+    )
+}
+
+internal fun isInternetArchiveOpenLicense(rights: String, licenseUrl: String): Boolean {
+    val license = "$rights $licenseUrl".lowercase()
+    return "public domain" in license ||
+        "publicdomain" in license ||
+        "creativecommons.org/publicdomain/zero/" in license ||
+        Regex("""creativecommons\.org/licenses/by(?:-sa)?(?:/|$)""").containsMatchIn(license)
+}
+
+internal fun extractInternetArchiveText(text: String): String =
+    text.replace("\r\n", "\n").replace('\r', '\n').replace('\u000c', '\n').trim()
+
+private fun archiveTextField(value: Any?): String? = when (value) {
+    is JSONArray -> (0 until value.length())
+        .mapNotNull { value.optString(it).takeIf(String::isNotBlank) }
+        .joinToString(", ")
+        .takeIf(String::isNotBlank)
+    is String -> value.takeIf(String::isNotBlank)
+    else -> null
+}
+
+private fun escapeArchiveQuery(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 /** 内置在线书源。 */
 object BookSources {
 
@@ -462,6 +654,7 @@ object BookSources {
         Kunnu8Source(),
         GutenbergChineseSource(),
         WikisourceChineseSource(),
+        InternetArchiveChineseSource(),
     )
 
     fun byKey(key: String): BookSource = all.firstOrNull { it.key == key } ?: all.first()

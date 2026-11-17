@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.sp
 import com.qzkt.timetable.data.xsxk.XsxkRound
 import com.qzkt.timetable.ui.CourseRoundsUiState
@@ -59,6 +61,7 @@ fun CourseSelectScreen(
     onSaveEntryUrl: (String) -> Unit,
     onBack: () -> Unit,
     onOpenWebLogin: () -> Unit = {},
+    onOpenDrawer: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
 
@@ -78,6 +81,11 @@ fun CourseSelectScreen(
                     }
                 },
                 actions = {
+                    onOpenDrawer?.let { openDrawer ->
+                        IconButton(onClick = openDrawer) {
+                            Icon(Icons.Default.Menu, contentDescription = "打开侧边菜单")
+                        }
+                    }
                     IconButton(onClick = onRefresh, enabled = !state.loading) {
                         Icon(Icons.Default.Refresh, contentDescription = "刷新")
                     }
@@ -203,6 +211,8 @@ fun CourseSelectScreen(
 private fun RoundCard(round: XsxkRound, onEnter: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(

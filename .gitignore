@@ -20,3 +20,10 @@ captures/
 *.log
 .DS_Store
 _dsh_probe.txt
+
+# 本地构建产物 / 工具目录
+.mimosa/
+build-alt/
+dist/
+.gradle-old-*/
+app/stableIds.txt

@@ -79,6 +79,41 @@ class MediaDownloaderTest {
     }
 
     @Test
+    fun `HLS主列表选择最高码率并合并相对地址分片`() = runBlocking {
+        val sink = ByteArrayOutputStream()
+        val headers = mapOf("Referer" to "https://video.example/")
+
+        val written = MediaDownloader().downloadHls("$base/master.m3u8", headers, sink)
+
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), sink.toByteArray())
+        assertEquals(4L, written)
+        assertTrue(seenHeaders.any { it.equals("referer: https://video.example/", ignoreCase = true) })
+    }
+
+    @Test
+    fun `HLS加密播放列表明确拒绝`() = runBlocking {
+        val error = runCatching {
+            MediaDownloader().downloadHls("$base/encrypted.m3u8", emptyMap(), ByteArrayOutputStream())
+        }.exceptionOrNull() as LinkResolveException
+
+        assertTrue(error.message!!.contains("加密"))
+    }
+
+    @Test
+    fun `HLS重定向后按最终播放列表地址解析分片`() = runBlocking {
+        val sink = ByteArrayOutputStream()
+
+        MediaDownloader().downloadHls("$base/redirect.m3u8", emptyMap(), sink)
+
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), sink.toByteArray())
+    }
+
+    @Test
+    fun `媒体下载客户端不限制整次下载时长`() {
+        assertEquals(0, mediaDownloadClient().callTimeoutMillis)
+    }
+
+    @Test
     fun `服务器报错时抛出带状态码的异常`() = runBlocking {
         val error = runCatching {
             MediaDownloader().download("$base/missing.mp4", emptyMap(), ByteArrayOutputStream())
@@ -95,6 +130,7 @@ class MediaDownloaderTest {
         assertEquals("movie.mp4", downloadableFileName("movie.mp4", "$base/movie.mp4"))
         assertEquals("video.mp4", downloadableFileName(null, "$base/play/?video_id=v1"))
         assertEquals("x.mkv", downloadableFileName("x", "$base/v.mkv"))
+        assertEquals("剧名.ts", downloadableFileName("剧名", "$base/video.m3u8"))
         assertEquals("很长".repeat(30).take(60) + ".mp4", downloadableFileName("很长".repeat(30), "$base/v.mp4"))
         assertEquals("video.mp4", downloadableFileName("   ", "$base/v.mp4"))
     }
@@ -112,6 +148,7 @@ class MediaDownloaderTest {
         assertEquals("video/mp4", mimeTypeOf("a.mp4"))
         assertEquals("video/x-matroska", mimeTypeOf("a.mkv"))
         assertEquals("audio/mpeg", mimeTypeOf("a.mp3"))
+        assertEquals("video/mp2t", mimeTypeOf("a.ts"))
         assertEquals("video/mp4", mimeTypeOf("没有扩展名"))
         assertEquals("1 KB", readableSize(1024))
         assertEquals("1.0 MB", readableSize(1024 * 1024))
@@ -120,6 +157,37 @@ class MediaDownloaderTest {
 
     private fun handle(exchange: HttpExchange) {
         exchange.requestHeaders.forEach { (name, values) -> values.forEach { seenHeaders += name + ": " + it } }
+        when (exchange.requestURI.path) {
+            "/master.m3u8" -> return respond(
+                exchange,
+                "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nstream/low.m3u8\n" +
+                    "#EXT-X-STREAM-INF:BANDWIDTH=2000\nstream/high/index.m3u8\n",
+                "application/vnd.apple.mpegurl",
+            )
+            "/redirect.m3u8" -> {
+                exchange.responseHeaders.add("Location", "$base/stream/high/index.m3u8")
+                exchange.sendResponseHeaders(302, -1)
+                exchange.close()
+                return
+            }
+            "/stream/low.m3u8" -> return respond(
+                exchange,
+                "#EXTM3U\n#EXTINF:2,\nlow.ts\n#EXT-X-ENDLIST\n",
+                "application/vnd.apple.mpegurl",
+            )
+            "/stream/high/index.m3u8" -> return respond(
+                exchange,
+                "#EXTM3U\n#EXTINF:2,\npart-1.ts\n#EXTINF:2,\npart-2.ts\n#EXT-X-ENDLIST\n",
+                "application/vnd.apple.mpegurl",
+            )
+            "/stream/high/part-1.ts" -> return respond(exchange, byteArrayOf(1, 2), "video/mp2t")
+            "/stream/high/part-2.ts" -> return respond(exchange, byteArrayOf(3, 4), "video/mp2t")
+            "/encrypted.m3u8" -> return respond(
+                exchange,
+                "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:2,\npart.ts\n",
+                "application/vnd.apple.mpegurl",
+            )
+        }
         if (exchange.requestURI.path != "/media/video.mp4") {
             exchange.sendResponseHeaders(404, -1)
             exchange.close()
@@ -128,5 +196,14 @@ class MediaDownloaderTest {
         exchange.responseHeaders.add("Content-Type", "video/mp4")
         exchange.sendResponseHeaders(200, if (chunked) 0 else payload.size.toLong())
         exchange.responseBody.use { it.write(payload) }
+    }
+
+    private fun respond(exchange: HttpExchange, body: String, contentType: String) =
+        respond(exchange, body.toByteArray(Charsets.UTF_8), contentType)
+
+    private fun respond(exchange: HttpExchange, body: ByteArray, contentType: String) {
+        exchange.responseHeaders.add("Content-Type", contentType)
+        exchange.sendResponseHeaders(200, body.size.toLong())
+        exchange.responseBody.use { it.write(body) }
     }
 }

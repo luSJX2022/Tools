@@ -29,6 +29,7 @@ private data class AnimeStoreData(
     val customSources: List<CustomAnimeSource> = emptyList(),
     /** 被停用的源 key（内置 + 自定义通用），停用后不在影视页出现。 */
     val disabledSources: List<String> = emptyList(),
+    val filterAiContent: Boolean = true,
 )
 
 /** 用户自定义的苹果 CMS10 采集站（源管理页里手动添加）。 */
@@ -74,6 +75,18 @@ class AnimeStore(private val context: Context) {
 
     /** 被停用的源 key 集合。 */
     val disabledSources: Flow<Set<String>> = data.map { it.disabledSources.toSet() }
+
+    val filterAiContent: Flow<Boolean> = data.map { it.filterAiContent }
+
+    suspend fun setAiContentFilterEnabled(enabled: Boolean) {
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(filterAiContent = enabled),
+            )
+        }
+    }
 
     /** 添加自定义采集站；同地址会覆盖旧的名字。 */
     suspend fun addCustomSource(source: CustomAnimeSource) {
@@ -190,6 +203,16 @@ class AnimeStore(private val context: Context) {
             prefs[key] = json.encodeToString(
                 AnimeStoreData.serializer(),
                 existing.copy(progress = existing.progress + ("${progress.source}:${progress.id}" to progress)),
+            )
+        }
+    }
+
+    suspend fun clearProgress() {
+        context.animeDataStore.edit { prefs ->
+            val existing = decode(prefs[key])
+            prefs[key] = json.encodeToString(
+                AnimeStoreData.serializer(),
+                existing.copy(progress = emptyMap()),
             )
         }
     }

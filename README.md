@@ -60,7 +60,44 @@
 
 AI 说明：默认用免 Key 的公共模型（Pollinations），装上就能点「AI 深度解析」；限流（402）时会自动换其它免 Key 模型，
 全都不行才提示改用本地模型或注册免费额度服务（智谱 GLM-4-Flash 等）。
+
+## 菜鸟包裹
+
+「工具」页里的「菜鸟包裹」：把拼多多「取快递」小程序 **用原生语言 1:1 复刻**进 App ——
+三个页签「取快递 / 身份码 / 个人中心」+ 底部 tab 栏；配色（主文字 #151516、次文字 #58595B、弱化 #9C9C9C、
+拼多多红 #E02E24、选中态 #E53B43、链接 #0076FF、身份码底 #F5F5F5）、字号、间距、图标、文案
+全部取自页面真实 CSS（1rem=16dp）与页面资源，不是凭感觉画的。
+
+| 部分 | 位置 | 说明 |
+| --- | --- | --- |
+| 接口 | `data/tools/PddExpressApi.kt` | 我的快递：`POST .../api/express_trackbox/station/package`（body `{"entry_source":"24"}`）；收件码：`POST .../generate_identification_code`（body `{"entry_source":"WX"}`）。OkHttp 直连，15s/30s/40s 超时 |
+| 登录 | `ui/tools/ParcelLoginScreen.kt` | App 内 WebView 打开拼多多手机号登录页（`mobile.yangkeduo.com/login.html`），登录后合并多域 Cookie；**不走微信** |
+| 登录态 | `data/tools/ExpressStore.kt` | 拼多多 Cookie（pdd_user_id / accesstoken 等）存本机 DataStore；工具「清除数据」会一并抹掉 |
+| 界面（1:1 复刻） | `ui/tools/PddExpressScreen.kt` | 取快递 / 身份码 / 个人中心 三页签：banner、包裹卡片（**取件码 19sp Semibold + 可点复制**）、空态、近一周已取出、图片预览、身份码（旋转 90° 的条形码 + 倒计时）；底部 tab 用页面原图标的 tint 版本 |
+| 到站包裹 | `data/tools/PddExpressApi.kt` | 待取件读 `result.combine_list`（递归解析、字段多别名）；`package_out_list` 是**近一周已取出**，单独展示、不再混进待取件；取件码取 `pick_code` 并去掉「取件码」前缀/空格 |
+| 深色模式 | `ui/tools/PddExpressScreen.kt` | 配色按角色定义（`PddLight`/`PddDark` + `PddSkin` 可组合 getter），用 `MaterialTheme.surface` 亮度判断深浅，**跟随 App「设置 → 主题」**；浅色即页面 CSS 原值，深色为 #121212 底 / #1E1E1E 卡 / #EDEDED 字；条形码与二维码保持白底黑条（扫描必需）；内嵌网页在 API 29+ 开启 WebView 算法深色 |
+| 个人中心 | `ui/tools/PddAccountTab.kt` | 拼多多登录态、**头像 + 昵称**、手动运单（本机）、抓包快照导入、清除登录态、关于 |
+| 头像昵称 | `data/tools/PddExpressApi.kt` | `POST /api/express_trackbox/base/nickname/query`（body `{"scene":"dsd.usercenter"}`）→ `result.nickname` / `result.avatar`；`aes_switch` 时用页面同款 AES/ECB 固定 key 解密；拿不到显示「代收点用户」 |
+| 二维码 | `ui/tools/PddExpressScreen.kt` | 身份码页「切换出库身份码」形态：用 ZXing 生成二维码（与页面同款两种形态） |
+| 条形码 | `ui/tools/Code128Barcode.kt` | 收件码用 CODE128 原生绘制（与小程序同款 JsBarcode 的编码结果逐模块一致） |
+| 内嵌页面 | `ui/tools/ParcelPddPageScreen.kt` | WebView 内嵌拼多多「取快递」页（非微信路由 `/package`），工具栏可回首页 / 登录 / 刷新；`pinduoduo://` 等深链一律拦截 |
+| 入口 | `ui/tools/ParcelPickupScreen.kt` | 旧入口名保留，直接转到 1:1 复刻界面；抓包快照在 `assets/parcel/mdkd_package_capture.json` |
+
+**为什么不用微信**：这两个接口要的只是拼多多自己的登录 Cookie（`pdd_user_id` / `accesstoken` 这一套）。
+带 `/weixin/` 前缀的页面路由会被 302 到 `open.weixin.qq.com` 的 OAuth，App 里做不到；但 `/package` 路由不跳转，
+接口本身也不校验微信。所以登录方式改成：**App 内 WebView 用手机号登录拼多多**（手机号 + 验证码，与微信无关），
+登录完成后从 CookieManager 合并 `yangkeduo.com` / `mdkd.pinduoduo.com` 的 Cookie 存下来，原生接口直接使用。
+也保留「粘贴 Cookie」入口（可粘整段 Cookie 或「Copy as cURL」文本），方便直接从抓包/浏览器里导入。
+
+接口请求头与网页一致：手机 Chrome UA、`Origin: https://mdkd.pinduoduo.com`、`Referer: .../package`。
+登录失效时服务端返回 424 / `error_code 40001`，界面会提示重新登录。
+
+抓包复核（2026-11-14，Reqable 3.3.12）：`{"entry_source":"WX"}` → 收件码 `wx2026…`、`expire_mills` 约 9 分钟；
+`{"entry_source":"24"}` → `result.package_out_list`（站点 / 快递公司 / 运单号 / 到站时间）。
+解析、Cookie 提取、424/40001 错误映射都由 `PddExpressApiTest` 用真实响应夹具覆盖。
+
 ---
+
 
 ## 一、构建
 
@@ -174,8 +211,11 @@ export JAVA_HOME="$PWD/.toolchain/jdk-21"     # Windows cmd: set JAVA_HOME=%CD%\
 实测存活；分类 id 写死在 `VideoSources.kt` 里，逗号分隔的多个 id 会被当作一次聚合查询）：
 
 
-- **页签**：电影 / 剧集 / 动漫 / 综艺 / 短剧 —— 每个页签聚合该源的一组子分类
-  （接口查父分类不会带子分类内容，所以用逗号拼接叶子分类 id 一次查回）。
+- **筛选页签（App 自己的分类）**：全部 / 短剧 / 电影 / 动漫 / 综艺 / 纪录片 / 电视剧 ——
+  由 `data/anime/AnimeCategories.kt` 的规则决定（按片名 + 备注 + 资源站 type/tag/演员/简介等元数据里的
+  关键词归类，如「剧场版」算电影、「更新至」算电视剧），**不再跟随影视站给的分类**；
+  取数时从该源「全部」流拿一页再在本地筛，一页没命中会顺延取下一页（最多 3 页），避免小分类首屏空白。
+  首页「推荐」仍取该源第一个分类的最新流。
 - **搜索**：按名称关键词，跨该源全部分类。
 - **收藏与进度**：详情页点「收藏」，看过第几集自动记录（本地 DataStore JSON，
   按「源：id」隔离，换源不串数据）；列表里当前位置高亮、看过的变淡。
@@ -246,10 +286,13 @@ app/src/main/kotlin/com/qzkt/timetable/
 │   └── parse/                  节次、周次、字段别名、课表 JSON 的容错解析
 ├── data/
 │   ├── AppSettings / SettingsStore / TimetableStore / TimetableRepository
-│   ├── anime/                  影视：模型、资源站客户端（MacCmsSource / VideoSources）、收藏与进度
+│   ├── anime/                  影视：模型、资源站客户端（MacCmsSource / VideoSources）、本地分类规则（AnimeCategories）、收藏与进度
 │   └── update/                 检查更新（GitHub Releases）
 ├── sync/                       WorkManager 定时同步、通知、上课提醒闹钟
 ├── widget/                     Glance 桌面小组件
+├── data/AppLogStore.kt        应用日志（filesDir/logs/app.log，私有、有上限、自动脱敏 token/cookie）
+├── data/PluginLog.kt          插件日志统一入口：tag = 插件名，异步写入上面那份 app.log
+├── data/LogFilters.kt         日志行解析/按插件筛选（纯函数，有单测）
 └── ui/
     ├── QzktApp.kt              导航壳：工具页为起始页，底部「工具 / 设置」两个页签
     ├── grid/                   课表周视图
@@ -257,7 +300,7 @@ app/src/main/kotlin/com/qzkt/timetable/
     ├── yxy/                    易校园：签名、登录、校园卡查询与 Keystore 会话存储
     ├── anime/                  影视列表、详情、ViewModel
     ├── player/                 播放页、快捷手势、后台播放服务、链接解析页、B站/抖音解析器
-    ├── settings/               外观 / 影视源 / 存储管理 / 关于
+    ├── settings/               外观 / 影视源 / 存储管理 / 关于 / 日志（可按插件筛）
     ├── account/ log/ debug/ setup/ web/   账号（含学期 / 作息 / 同步 / 提醒 / 数据） / 变动日志 / 调试 / 配置向导 / 网页导入
     └── common/ theme/          公共组件（SectionCard / SplashOverlay）/ 主题
 ```

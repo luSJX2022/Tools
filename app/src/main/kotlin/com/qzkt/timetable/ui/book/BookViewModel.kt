@@ -10,6 +10,7 @@ import com.qzkt.timetable.data.book.BookSources
 import com.qzkt.timetable.data.book.BookStore
 import com.qzkt.timetable.data.book.CategorizedBookSource
 import com.qzkt.timetable.data.book.OnlineBook
+import com.qzkt.timetable.data.PluginLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -93,9 +94,16 @@ class BookViewModel(private val store: BookStore) : ViewModel() {
             _searching.value = true
             _searchError.value = null
             _category.value = StoreCategoryState()   // 搜索时退出分类浏览，让结果显示出来
+            PluginLog.i("图书", "搜索「" + query + "」（源：" + source.name + "）")
             runCatching { source.search(query) }
-                .onSuccess { _searchResults.value = it }
-                .onFailure { _searchError.value = it.message ?: "搜索失败" }
+                .onSuccess {
+                    PluginLog.i("图书", "搜索「" + query + "」得到 " + it.size + " 本")
+                    _searchResults.value = it
+                }
+                .onFailure {
+                    PluginLog.e("图书", "搜索「" + query + "」失败", it)
+                    _searchError.value = it.message ?: "搜索失败"
+                }
             _searching.value = false
         }
     }
