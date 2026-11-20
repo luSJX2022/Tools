@@ -25,6 +25,8 @@ import com.qzkt.timetable.ui.anime.AnimeViewModel
 import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
 import com.qzkt.timetable.ui.book.BookViewModel
 import com.qzkt.timetable.ui.book.BookViewModelFactory
+import com.qzkt.timetable.ui.academic.ExamsViewModel
+import com.qzkt.timetable.ui.academic.ExamsViewModelFactory
 import com.qzkt.timetable.ui.grades.GradesViewModel
 import com.qzkt.timetable.ui.grades.GradesViewModelFactory
 import com.qzkt.timetable.ui.common.LiquidGlassBackdrop
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
             val animeViewModel: AnimeViewModel = viewModel(factory = AnimeViewModelFactory(container))
             val bookViewModel: BookViewModel = viewModel(factory = BookViewModelFactory(container))
             val gradesViewModel: GradesViewModel = viewModel(factory = GradesViewModelFactory(container))
+            val examsViewModel: ExamsViewModel = viewModel(factory = ExamsViewModelFactory(container))
             val settings by viewModel.settings.collectAsStateWithLifecycle()
             val themeMode = remember(settings.themeMode) {
                 runCatching { ThemeMode.valueOf(settings.themeMode) }.getOrDefault(ThemeMode.SYSTEM)
@@ -66,7 +69,7 @@ class MainActivity : ComponentActivity() {
                         color = Color.Transparent,
                         contentColor = MaterialTheme.colorScheme.onBackground,
                     ) {
-                        QzktApp(viewModel, animeViewModel, bookViewModel, gradesViewModel)
+                        QzktApp(viewModel, animeViewModel, bookViewModel, gradesViewModel, examsViewModel)
                     }
                 }
             }

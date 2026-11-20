@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.automirrored.filled.Grading
 import androidx.compose.material.icons.filled.HowToReg
 import androidx.compose.material3.Icon
@@ -27,9 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * 教务页：课表、成绩、选课的聚合入口，底部页签切换。
+ * 教务页：课表、成绩、考试安排、选课的聚合入口，底部页签切换。
  *
- * 三个子页面各自带 Scaffold 和状态逻辑，由外部以槽位传入；
+ * 各子页面自己带 Scaffold 和状态逻辑，由外部以槽位传入；
  * 这里用 SaveableStateHolder 保活，切页签不丢课表的周次选择等状态。
  */
 @Composable
@@ -37,6 +38,7 @@ fun AcademicScreen(
     timetableContent: @Composable () -> Unit,
     gradesContent: @Composable () -> Unit,
     courseSelectContent: @Composable () -> Unit,
+    examsContent: @Composable () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(0) }
     val stateHolder = rememberSaveableStateHolder()
@@ -46,6 +48,7 @@ fun AcademicScreen(
             when (tab) {
                 0 -> stateHolder.SaveableStateProvider("academic_timetable") { timetableContent() }
                 1 -> stateHolder.SaveableStateProvider("academic_grades") { gradesContent() }
+                2 -> stateHolder.SaveableStateProvider("academic_exams") { examsContent() }
                 else -> stateHolder.SaveableStateProvider("academic_course_select") { courseSelectContent() }
             }
         }
@@ -82,6 +85,12 @@ fun AcademicScreen(
                     NavigationBarItem(
                         selected = tab == 2,
                         onClick = { tab = 2 },
+                        icon = { Icon(Icons.AutoMirrored.Filled.EventNote, contentDescription = null) },
+                        label = { Text("考试") },
+                    )
+                    NavigationBarItem(
+                        selected = tab == 3,
+                        onClick = { tab = 3 },
                         icon = { Icon(Icons.Default.HowToReg, contentDescription = null) },
                         label = { Text("选课") },
                     )

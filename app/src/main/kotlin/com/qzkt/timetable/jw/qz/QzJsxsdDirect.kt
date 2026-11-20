@@ -1,7 +1,9 @@
 package com.qzkt.timetable.jw.qz
 
+import com.qzkt.timetable.jw.ExamInfo
 import com.qzkt.timetable.jw.JwException
 import com.qzkt.timetable.jw.GradeInfo
+import com.qzkt.timetable.jw.parseExamsHtml
 import com.qzkt.timetable.jw.parseGradesHtml
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter.Companion.TIMETABLE_PATHS
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter.Companion.resolveBase
@@ -12,6 +14,8 @@ import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.jsoup.Jsoup
+import java.time.LocalDate
 
 /**
  * 拿着**已有的会话 cookie** 直接去拉课表页，跳过登录。
@@ -60,6 +64,17 @@ internal class QzJsxsdDirect(
          * 调用方应当引导重新在应用内登录，而不是报「查询失败」。
          */
         val loggedIn: Boolean,
+    )
+
+    data class ExamsOutcome(
+        /** 解析出来的考试安排；为空表示这学期没有，或者页面没认出来。 */
+        val exams: List<ExamInfo>,
+        /** 同上：false = 会话过期，要去应用内登录。 */
+        val loggedIn: Boolean,
+        /** 真正解析出考试的那个地址；没找到页面时为 null。 */
+        val usedPath: String? = null,
+        /** 页面内容摘要（前 400 字），页面没认出来时给诊断用。 */
+        val pageSnippet: String = "",
     )
 
     /**
@@ -113,6 +128,110 @@ internal class QzJsxsdDirect(
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()
         }
+    }
+
+    /**
+     * 拿着**已有的会话 cookie** 拉「考试安排」页。
+     *
+     * 和成绩一样，考试安排页也是登录态才能看，所以走同一条会话路：
+     *
+     * - 地址先从教务主界面的菜单里找（各校把「考试安排」挂在不同路径下），
+     *   找不到再用常见地址兜底；
+     * - 先直接 GET（多数学校默认就查当前学期）；
+     * - 页面上没有考试，再按学年学期 POST 一次 —— 强智的查询条件就是 `xn` / `xq`。
+     */
+    suspend fun fetchExams(base: String, cookie: String?): ExamsOutcome = withContext(Dispatchers.IO) {
+        val client = clientFactory()
+        val normalizedBase = runCatching { resolveBase(base) }.getOrElse { throw JwException("地址不对：$base") }
+        var sawLoginPage = false
+        var usedPath: String? = null
+        var snippet = ""
+
+        fun handle(html: String, path: String): List<ExamInfo>? {
+            if (html.isLoginPage()) {
+                sawLoginPage = true
+                return null
+            }
+            snippet = html.replace(Regex("\\s+"), " ").take(400)
+            usedPath = path
+            return parseExamsHtml(html).ifEmpty { null }
+        }
+
+        try {
+            val discovered = runCatching { discoverExamPaths(client, normalizedBase, cookie) }.getOrNull().orEmpty()
+            for (path in (discovered + EXAM_PATHS.map { normalizedBase + it }).distinct()) {
+                val url = if (path.startsWith("http")) path else normalizedBase + path
+                val html = runCatching { get(client, url, cookie) }.getOrNull() ?: continue
+                handle(html, path)?.let { return@withContext ExamsOutcome(it, loggedIn = true, usedPath = path, pageSnippet = snippet) }
+                // 被打回登录页：换地址、换参数都没用
+                if (html.isLoginPage()) continue
+
+                for ((xn, xq) in examTermCandidates()) {
+                    val posted = runCatching {
+                        post(client, url, cookie, form = mapOf("xn" to xn, "xq" to xq))
+                    }.getOrNull() ?: continue
+                    handle(posted, path)?.let {
+                        return@withContext ExamsOutcome(it, loggedIn = true, usedPath = path, pageSnippet = snippet)
+                    }
+                    if (posted.isLoginPage()) break
+                }
+            }
+            ExamsOutcome(emptyList(), loggedIn = !sawLoginPage, usedPath = usedPath, pageSnippet = snippet)
+        } finally {
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+    }
+
+    /**
+     * 从教务主界面的菜单里找「考试安排」的地址。
+     *
+     * 新版一体化的菜单是 JS 动态生成的，`<a>` 常常扫不到，所以页面原文里的
+     * `xsks` / `ksap` 地址也一起挖；菜单放在 iframe 里时把 iframe 也抓一遍。
+     */
+    private fun discoverExamPaths(client: OkHttpClient, base: String, cookie: String?): List<String> {
+        val found = mutableListOf<String>()
+        for (path in QzJsxsdAdapter.HOME_PATHS) {
+            val pageUrl = base + path
+            val pageHtml = runCatching { get(client, pageUrl, cookie) }.getOrNull() ?: continue
+            if (pageHtml.isBlank() || pageHtml.isLoginPage()) continue
+
+            val doc = runCatching { Jsoup.parse(pageHtml, pageUrl) }.getOrNull() ?: continue
+            collectExamLinks(doc, pageUrl, found)
+
+            for (frame in doc.select("iframe[src], frame[src]")) {
+                val frameUrl = pageUrl.toHttpUrlOrNull()?.resolve(frame.attr("src"))?.toString() ?: continue
+                val frameHtml = runCatching { get(client, frameUrl, cookie) }.getOrNull() ?: continue
+                if (frameHtml.isBlank() || frameHtml.isLoginPage()) continue
+                collectExamLinks(Jsoup.parse(frameHtml, frameUrl), frameUrl, found)
+            }
+        }
+        return found.distinct()
+    }
+
+    private fun collectExamLinks(doc: org.jsoup.nodes.Document, pageUrl: String, into: MutableList<String>) {
+        fun add(href: String) {
+            if (href.isBlank() || href.startsWith("javascript", ignoreCase = true)) return
+            pageUrl.toHttpUrlOrNull()?.resolve(href)?.toString()?.let { into += it }
+        }
+
+        doc.select("a[href]").forEach { anchor ->
+            val href = anchor.attr("href").trim()
+            if (anchor.text().contains("考试") || EXAM_URL_PATTERN.containsMatchIn(href)) add(href)
+        }
+        EXAM_URL_PATTERN.findAll(doc.body().html()).map { it.groupValues[1] }.forEach(::add)
+    }
+
+    /** 当前学期的 `xn` / `xq`，再补一个相邻学期：学校放假期间两边都可能查得到。 */
+    private fun examTermCandidates(today: LocalDate = LocalDate.now()): List<Pair<String, String>> {
+        val month = today.monthValue
+        val startYear = if (month >= 9) today.year else today.year - 1
+        val term = if (month >= 9 || month == 1) "1" else "2"
+        val other = if (term == "1") "2" else "1"
+        return listOf(
+            "$startYear-${startYear + 1}" to term,
+            "$startYear-${startYear + 1}" to other,
+        )
     }
 
     suspend fun fetchTimetable(base: String, cookie: String?): Outcome = withContext(Dispatchers.IO) {
@@ -218,3 +337,19 @@ internal class QzJsxsdDirect(
     /** 页面是不是登录页（会话没登进去 / 已过期时，学校会把任何地址重定向回它）。 */
     private fun String.isLoginPage(): Boolean = contains("userAccount") || contains("loginForm")
 }
+
+/**
+ * 强智「考试安排」页的常见地址（主界面菜单里没挖到时兜底）。
+ *
+ * 新版一体化普遍是 `/xsks/xsksap_list`（查询条件 `xn` / `xq`），
+ * 也有学校是 `xsksap_query` / `xsks_list`，都试一遍。
+ */
+internal val EXAM_PATHS = listOf(
+    "/xsks/xsksap_list",
+    "/xsks/xsksap_query",
+    "/xsks/xsks_list",
+)
+
+/** 页面里像「考试安排」地址的串：带 `xsks` / `ksap` / `ksxx` 的路径。 */
+private val EXAM_URL_PATTERN =
+    Regex("[\"'(]([^\"'()\\s<>]*(?:xsks|ksap|ksxx)[^\"'()\\s<>]*)[\"')]", RegexOption.IGNORE_CASE)

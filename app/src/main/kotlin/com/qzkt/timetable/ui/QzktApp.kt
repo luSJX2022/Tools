@@ -69,6 +69,8 @@ import com.qzkt.timetable.ui.settings.AppLogsScreen
 import com.qzkt.timetable.ui.setup.SetupScreen
 import com.qzkt.timetable.ui.academic.AcademicScreen
 import com.qzkt.timetable.ui.academic.CourseSelectScreen
+import com.qzkt.timetable.ui.academic.ExamsScreen
+import com.qzkt.timetable.ui.academic.ExamsViewModel
 import com.qzkt.timetable.ui.anime.AnimeViewModelFactory
 import com.qzkt.timetable.ui.book.BookshelfScreen
 import com.qzkt.timetable.ui.book.BookViewModel
@@ -133,6 +135,7 @@ fun QzktApp(
     animeViewModel: AnimeViewModel,
     bookViewModel: BookViewModel,
     gradesViewModel: GradesViewModel,
+    examsViewModel: ExamsViewModel,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
@@ -452,6 +455,14 @@ fun QzktApp(
                         gradesContent = {
                             GradesScreen(
                                 viewModel = gradesViewModel,
+                                onBack = { navController.popBackStack() },
+                                onOpenWebLogin = { navController.navigate(Routes.WEB) },
+                                onOpenDrawer = ::openDrawer,
+                            )
+                        },
+                        examsContent = {
+                            ExamsScreen(
+                                viewModel = examsViewModel,
                                 onBack = { navController.popBackStack() },
                                 onOpenWebLogin = { navController.navigate(Routes.WEB) },
                                 onOpenDrawer = ::openDrawer,
