@@ -5,6 +5,7 @@ import com.qzkt.timetable.jw.JwException
 import com.qzkt.timetable.jw.GradeInfo
 import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.jw.extractExamTermOptions
+import com.qzkt.timetable.jw.isLoginPageHtml
 import com.qzkt.timetable.jw.parseExamsHtml
 import com.qzkt.timetable.jw.parseGradesHtml
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter.Companion.TIMETABLE_PATHS
@@ -30,7 +31,8 @@ import java.time.LocalDate
  * 所以它一旦成功，就等于验证了自动同步那条路在这个学校是通的。
  */
 internal class QzJsxsdDirect(
-    private val clientFactory: () -> OkHttpClient = QzHttp::defaultClient,
+    // 这里自己把会话 cookie 写进请求头，所以不能用带 CookieJar 的客户端（重定向下发的 Set-Cookie 会覆盖会话）
+    private val clientFactory: () -> OkHttpClient = QzHttp::statelessClient,
 ) {
 
     data class Outcome(
@@ -180,6 +182,17 @@ internal class QzJsxsdDirect(
             val candidates = (discovered + EXAM_PATHS.map { normalizedBase + it }).distinct()
             val reachable = LinkedHashSet<String>()
 
+            // 会话到底还行不行：用课表首页探一次。考试页的 GET 可能被学校拒绝（只认 POST），
+            // 不能因为考试页返回登录页就直接告诉用户「登录失效」。
+            var sessionOk = false
+            for (homePath in QzJsxsdAdapter.HOME_PATHS.take(2)) {
+                val probe = runCatching { get(client, normalizedBase + homePath, cookie) }.getOrNull() ?: continue
+                if (probe.isNotBlank() && !probe.isLoginPage()) {
+                    sessionOk = true
+                    break
+                }
+            }
+
             // 第一轮：直接 GET（有些学校默认就查当前学期）
             for (url in candidates) {
                 val html = runCatching { get(client, url, cookie) }.getOrNull() ?: continue
@@ -251,7 +264,8 @@ internal class QzJsxsdDirect(
                 "考试查询没出结果：主地址 " + primary + "、学期 " + termList + "、登录页=" + sawLoginPage +
                     "、最后页面=" + snippet.take(120),
             )
-            ExamsOutcome(emptyList(), loggedIn = !sawLoginPage, usedPath = usedPath, pageSnippet = snippet)
+            // 课表页能打开就说明会话是好的（登录失效的提示别误报）
+            ExamsOutcome(emptyList(), loggedIn = sessionOk || !sawLoginPage, usedPath = usedPath, pageSnippet = snippet)
         } finally {
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()
@@ -323,7 +337,7 @@ internal class QzJsxsdDirect(
                 val html = runCatching { get(client, normalizedBase + path, cookie) }.getOrNull() ?: continue
                 if (html.isBlank()) continue
                 // 被打回登录页：没登录，或者会话过期了
-                if (html.contains("userAccount") || html.contains("loginForm")) {
+                if (html.isLoginPage()) {
                     lastHtml = html
                     sawLoginPage = true
                     continue
@@ -409,8 +423,13 @@ internal class QzJsxsdDirect(
         }
     }
 
-    /** 页面是不是登录页（会话没登进去 / 已过期时，学校会把任何地址重定向回它）。 */
-    private fun String.isLoginPage(): Boolean = contains("userAccount") || contains("loginForm")
+    /**
+     * 页面是不是登录页（会话没登进去 / 已过期时，学校会把任何地址重定向回它）。
+     *
+     * 不能只做字符串包含：强智的页面里经常嵌着登录弹窗/脚本片段，含 `loginForm` 字样但其实是正常页面，
+     * 会被误判成「登录失效」。所以要求**真的有登录表单元素**，并且页面里解析不出考试表。
+     */
+    private fun String.isLoginPage(): Boolean = isLoginPageHtml(this)
 }
 
 /**

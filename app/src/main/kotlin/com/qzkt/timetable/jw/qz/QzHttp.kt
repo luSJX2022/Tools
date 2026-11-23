@@ -26,6 +26,20 @@ internal object QzHttp {
         .cookieJar(InMemoryCookieJar())
         .build()
 
+    /**
+     * 不带 CookieJar 的客户端：调用方把会话 cookie 自己放进 `Cookie` 头里。
+     *
+     * 用带 jar 的客户端做「拿已有会话直接请求」时有个坑：服务器把请求重定向到登录页会下发
+     * 新的 Set-Cookie，jar 收到后**覆盖**我们手动设的会话头，之后的请求全变成未登录状态，
+     * 用户就会看到「明明刚登录，却说登录失效」。
+     */
+    fun statelessClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
+
     /** 会话级的 cookie 存储：登录拿到的 JSESSIONID 之类全靠它。 */
     class InMemoryCookieJar : CookieJar {
         private val store = mutableMapOf<String, MutableList<Cookie>>()

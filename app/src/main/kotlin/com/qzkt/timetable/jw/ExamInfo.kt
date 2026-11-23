@@ -146,6 +146,20 @@ internal fun extractExamTermOptions(html: String): List<String> {
 }
 
 /**
+ * 判断一页 HTML 是不是教务的登录页。
+ *
+ * 不能只做字符串包含：强智的页面里常嵌着登录弹窗/脚本片段，含 `loginForm` 字样但其实是正常页面，
+ * 只按字符串判断会把「已登录」误判成「登录失效」。所以要求**真的有登录表单元素**，
+ * 并且页面里解析不出考试表（登录页不可能带考试表）。
+ */
+internal fun isLoginPageHtml(html: String): Boolean {
+    if (html.isBlank()) return false
+    val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return false
+    val hasLoginForm = doc.selectFirst("form#loginForm, input#userAccount, input#userPassword") != null
+    return hasLoginForm && parseExamsHtml(html).isEmpty()
+}
+
+/**
  * 解析「考试安排」页的 HTML（强智网页版 `/jsxsd/xsks/xsksap_list` 这一类）。
  *
  * 各校表头文字和列序不一（序号 / 考试时间 / 考试地点 / 考试课程 / 考试形式…），
