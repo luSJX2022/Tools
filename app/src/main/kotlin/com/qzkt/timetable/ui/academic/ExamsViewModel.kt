@@ -24,6 +24,8 @@ data class ExamsUiState(
     val hasLoaded: Boolean = false,
     /** 是不是「该去应用内登录一次」这一类错误。 */
     val needsRelogin: Boolean = false,
+    /** 教务返回页面的摘要：没解析出考试时给「查看原始页面」用，便于排查页面改版。 */
+    val pageSnippet: String = "",
 )
 
 /**
@@ -54,6 +56,7 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
 
             var sessionExpired = false
             var pageMissing = false
+            var snippet = ""
 
             if (settings.hasSession) {
                 val outcome = runCatching {
@@ -62,9 +65,14 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
                     }
                 }.getOrNull()
                 if (outcome != null && outcome.exams.isNotEmpty()) {
-                    _state.value = ExamsUiState(exams = outcome.exams.sortedBy { it.sortKey }, hasLoaded = true)
+                    _state.value = ExamsUiState(
+                        exams = outcome.exams.sortedBy { it.sortKey },
+                        hasLoaded = true,
+                        pageSnippet = outcome.pageSnippet,
+                    )
                     return@launch
                 }
+                snippet = outcome?.pageSnippet.orEmpty()
                 sessionExpired = outcome != null && !outcome.loggedIn
                 pageMissing = outcome != null && outcome.loggedIn && outcome.usedPath == null
             }
@@ -94,9 +102,14 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
                             it.copy(sessionCookie = autoCookie, sessionSavedAt = System.currentTimeMillis())
                         }
                     }
-                    _state.value = ExamsUiState(exams = outcome.exams.sortedBy { it.sortKey }, hasLoaded = true)
+                    _state.value = ExamsUiState(
+                        exams = outcome.exams.sortedBy { it.sortKey },
+                        hasLoaded = true,
+                        pageSnippet = outcome.pageSnippet,
+                    )
                     return@launch
                 }
+                if (outcome != null) snippet = outcome.pageSnippet
                 if (outcome != null && outcome.loggedIn && outcome.usedPath == null) pageMissing = true
                 if (outcome != null && !outcome.loggedIn) sessionExpired = true
             }
@@ -107,6 +120,7 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
                 exams = emptyList(),
                 hasLoaded = true,
                 needsRelogin = sessionExpired,
+                pageSnippet = snippet,
                 error = when {
                     sessionExpired -> "登录状态已失效，考试安排查不到。请在页面里登录一次再试。"
                     pageMissing -> "没找到教务系统里的考试安排页面，可能这所学校没开这个入口。"

@@ -1,6 +1,8 @@
 package com.qzkt.timetable.ui.academic
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,6 +41,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +75,12 @@ fun ExamsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val errorMsg = state.error
+    var showSnippet by remember { mutableStateOf(false) }
+
+    // 第一次进来直接查一次：用户点进「考试」就是想看安排的，不用再点一次按钮
+    LaunchedEffect(Unit) {
+        if (!state.hasLoaded && !state.loading) viewModel.refresh()
+    }
 
     Scaffold(
         topBar = {
@@ -155,11 +169,31 @@ fun ExamsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     TextButton(onClick = { viewModel.refresh() }) { Text("重新查询") }
+                    if (state.pageSnippet.isNotBlank()) {
+                        TextButton(onClick = { showSnippet = true }) { Text("查看教务返回的页面") }
+                    }
                 }
 
                 else -> ExamsContent(exams = state.exams)
             }
         }
+    }
+
+    if (showSnippet) {
+        AlertDialog(
+            onDismissRequest = { showSnippet = false },
+            title = { Text("教务返回的页面（前 400 字）") },
+            text = {
+                Text(
+                    text = state.pageSnippet,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showSnippet = false }) { Text("关闭") }
+            },
+        )
     }
 }
 

@@ -3,6 +3,8 @@ package com.qzkt.timetable.jw.qz
 import com.qzkt.timetable.jw.ExamInfo
 import com.qzkt.timetable.jw.JwException
 import com.qzkt.timetable.jw.GradeInfo
+import com.qzkt.timetable.data.PluginLog
+import com.qzkt.timetable.jw.extractExamTermOptions
 import com.qzkt.timetable.jw.parseExamsHtml
 import com.qzkt.timetable.jw.parseGradesHtml
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter.Companion.TIMETABLE_PATHS
@@ -147,35 +149,108 @@ internal class QzJsxsdDirect(
         var usedPath: String? = null
         var snippet = ""
 
-        fun handle(html: String, path: String): List<ExamInfo>? {
+        // 页面上出现的学年学期（强智列表页不带 xnxq01id 时不出表格）
+        val terms = LinkedHashSet<String>()
+
+        fun tryParse(html: String, path: String): List<ExamInfo>? {
             if (html.isLoginPage()) {
                 sawLoginPage = true
                 return null
             }
-            snippet = html.replace(Regex("\\s+"), " ").take(400)
             usedPath = path
+            snippet = html.replace(Regex("\\s+"), " ").take(400)
+            extractExamTermOptions(html).forEach { terms += it }
             return parseExamsHtml(html).ifEmpty { null }
+        }
+
+        /** 页面本体解析不出来时，把同源的 iframe / frame 也抓一遍（有的强智把列表放在框架里）。 */
+        fun tryParseWithFrames(html: String, url: String): List<ExamInfo>? {
+            tryParse(html, url)?.let { return it }
+            val doc = runCatching { Jsoup.parse(html, url) }.getOrNull() ?: return null
+            for (frame in doc.select("iframe[src], frame[src]").take(3)) {
+                val frameUrl = url.toHttpUrlOrNull()?.resolve(frame.attr("src"))?.toString() ?: continue
+                val frameHtml = runCatching { get(client, frameUrl, cookie) }.getOrNull() ?: continue
+                tryParse(frameHtml, frameUrl)?.let { return it }
+            }
+            return null
         }
 
         try {
             val discovered = runCatching { discoverExamPaths(client, normalizedBase, cookie) }.getOrNull().orEmpty()
-            for (path in (discovered + EXAM_PATHS.map { normalizedBase + it }).distinct()) {
-                val url = if (path.startsWith("http")) path else normalizedBase + path
-                val html = runCatching { get(client, url, cookie) }.getOrNull() ?: continue
-                handle(html, path)?.let { return@withContext ExamsOutcome(it, loggedIn = true, usedPath = path, pageSnippet = snippet) }
-                // 被打回登录页：换地址、换参数都没用
-                if (html.isLoginPage()) continue
+            val candidates = (discovered + EXAM_PATHS.map { normalizedBase + it }).distinct()
+            val reachable = LinkedHashSet<String>()
 
-                for ((xn, xq) in examTermCandidates()) {
-                    val posted = runCatching {
-                        post(client, url, cookie, form = mapOf("xn" to xn, "xq" to xq))
-                    }.getOrNull() ?: continue
-                    handle(posted, path)?.let {
-                        return@withContext ExamsOutcome(it, loggedIn = true, usedPath = path, pageSnippet = snippet)
-                    }
-                    if (posted.isLoginPage()) break
+            // 第一轮：直接 GET（有些学校默认就查当前学期）
+            for (url in candidates) {
+                val html = runCatching { get(client, url, cookie) }.getOrNull() ?: continue
+                tryParseWithFrames(html, url)?.let {
+                    return@withContext ExamsOutcome(it, loggedIn = true, usedPath = url, pageSnippet = snippet)
+                }
+                if (html.isLoginPage()) continue
+                reachable += url
+            }
+
+            // 学期候选：页面上抓到的在前（selected 的排第一），再按当前日期推算
+            examTermCandidates().forEach { (xn, xq) -> terms += "$xn-$xq" }
+            val termList = terms.take(4)
+
+            fun forms(term: String): List<Map<String, String>> {
+                val parts = term.split("-")
+                val xn = parts.getOrNull(0).orEmpty() + "-" + parts.getOrNull(1).orEmpty()
+                val xq = parts.getOrNull(2).orEmpty()
+                return listOf(
+                    mapOf("xnxq01id" to term, "xqlbmc" to "", "ksmcdm" to ""),
+                    mapOf("xnxqid" to term, "xqlbmc" to ""),
+                    mapOf("xn" to xn, "xq" to xq),
+                )
+            }
+
+            fun hit(exams: List<ExamInfo>, url: String): ExamsOutcome {
+                PluginLog.i("教务", "考试查询成功：" + url + " 共 " + exams.size + " 条")
+                return ExamsOutcome(exams, loggedIn = true, usedPath = url, pageSnippet = snippet)
+            }
+
+            // 优先用「列表页」这个标准地址，没探到就用第一个能打开的候选
+            val primary = reachable.firstOrNull { it.contains("xsksap_list") }
+                ?: reachable.firstOrNull()
+                ?: (normalizedBase + EXAM_PATHS.first())
+
+            // 第二轮：强智标准 POST（xnxq01id），每个学期试一次，命中即停
+            for (term in termList) {
+                val html = runCatching { post(client, primary, cookie, forms(term).first()) }.getOrNull() ?: continue
+                tryParse(html, primary)?.let { return@withContext hit(it, primary) }
+                if (html.isLoginPage()) break
+            }
+
+            // 第三轮：换参数写法（xnxqid / xn+xq）与 query，参数只试前两个学期
+            for (term in termList.take(2)) {
+                for (form in forms(term).drop(1)) {
+                    val html = runCatching { post(client, primary, cookie, form) }.getOrNull() ?: continue
+                    tryParse(html, primary)?.let { return@withContext hit(it, primary) }
+                    if (html.isLoginPage()) break
+                }
+                val separator = if (primary.contains('?')) "&" else "?"
+                val viaQuery = runCatching { get(client, primary + separator + "xnxq01id=" + term, cookie) }
+                    .getOrNull() ?: continue
+                tryParse(viaQuery, primary)?.let { return@withContext hit(it, primary) }
+            }
+
+            // 第四轮：其它候选地址兜底（只用第一个学期试一次）
+            val firstTerm = termList.firstOrNull()
+            if (firstTerm != null) {
+                for (url in (reachable + EXAM_PATHS.map { normalizedBase + it }).distinct()
+                    .filter { it != primary }.take(2)
+                ) {
+                    val html = runCatching { post(client, url, cookie, forms(firstTerm).first()) }.getOrNull() ?: continue
+                    tryParse(html, url)?.let { return@withContext hit(it, url) }
                 }
             }
+
+            PluginLog.w(
+                "教务",
+                "考试查询没出结果：主地址 " + primary + "、学期 " + termList + "、登录页=" + sawLoginPage +
+                    "、最后页面=" + snippet.take(120),
+            )
             ExamsOutcome(emptyList(), loggedIn = !sawLoginPage, usedPath = usedPath, pageSnippet = snippet)
         } finally {
             client.dispatcher.executorService.shutdown()

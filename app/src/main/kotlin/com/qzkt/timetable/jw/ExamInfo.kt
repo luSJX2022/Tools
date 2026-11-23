@@ -112,6 +112,39 @@ internal fun parseExamTime(raw: String): ParsedExamTime {
     return ParsedExamTime(date, single, null)
 }
 
+/** 强智的学年学期值，例如 `2025-2026-1`。 */
+private val TERM_VALUE = Regex("""\d{4}-\d{4}-[12]""")
+
+/**
+ * 从教务页面里抠出可用的学年学期（`2025-2026-1` 这种）。
+ *
+ * 强智的考试列表页要带 `xnxq01id`（学年学期）才会出表格，不带时页面只有查询条件和空表，
+ * 所以先抓查询页里 `<select>` 的选项，页面里没有 select 时再从原文里找。
+ * 返回顺序：先 selected 的那项，再按页面顺序；去重。
+ */
+internal fun extractExamTermOptions(html: String): List<String> {
+    if (html.isBlank()) return emptyList()
+    val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return emptyList()
+    val selected = LinkedHashSet<String>()
+    val others = LinkedHashSet<String>()
+
+    doc.select("select").forEach { select ->
+        val hint = (select.attr("name") + " " + select.attr("id")).lowercase()
+        val likelyTerm = hint.contains("xnxq") || hint.contains("xnxqid") || hint.contains("term")
+        select.select("option").forEach { option ->
+            val value = option.attr("value").trim()
+            if (!TERM_VALUE.matches(value)) return@forEach
+            if (option.hasAttr("selected") || likelyTerm && value == select.attr("value")) selected += value
+            others += value
+        }
+    }
+
+    if (selected.isEmpty() && others.isEmpty()) {
+        TERM_VALUE.findAll(html).map { it.value }.forEach { others += it }
+    }
+    return (selected + others).toList()
+}
+
 /**
  * 解析「考试安排」页的 HTML（强智网页版 `/jsxsd/xsks/xsksap_list` 这一类）。
  *

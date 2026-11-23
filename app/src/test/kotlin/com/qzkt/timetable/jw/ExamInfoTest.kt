@@ -146,4 +146,42 @@ class ExamInfoTest {
         assertEquals("昨天", examDayLabel(today.minusDays(1), today))
         assertNull(examDayLabel(null, today))
     }
+
+    @Test
+    fun `extract term options from qiangzhi query page`() {
+        val html = """
+            <form id="Form1" action="/jsxsd/xsks/xsksap_list" method="post">
+              <select id="xnxq01id" name="xnxq01id">
+                <option value="2026-2027-1" selected>2026-2027-1</option>
+                <option value="2025-2026-2">2025-2026-2</option>
+              </select>
+            </form>
+        """.trimIndent()
+        assertEquals(listOf("2026-2027-1", "2025-2026-2"), extractExamTermOptions(html))
+    }
+
+    @Test
+    fun `term options fall back to raw text`() {
+        val html = """
+            <select id="xqlb" name="xqlb"><option value="1">第一学期</option></select>
+            <p>当前学期 2026-2027-1 的考试安排</p>
+        """.trimIndent()
+        assertEquals(listOf("2026-2027-1"), extractExamTermOptions(html))
+        assertTrue(extractExamTermOptions("").isEmpty())
+    }
+
+    @Test
+    fun `qiangzhi exam table keeps seat and location`() {
+        val html = """
+            <table class="Nsb_r_list Nsb_table">
+              <tr><th>序号</th><th>考试时间</th><th>考试地点</th><th>考试课程</th><th>座位号</th><th>考试形式</th></tr>
+              <tr><td>1</td><td>2026-11-21 19:00~21:00</td><td>3#A220</td><td>大学英语III</td><td>12</td><td>闭卷</td></tr>
+            </table>
+        """.trimIndent()
+        val exams = parseExamsHtml(html)
+        assertEquals(1, exams.size)
+        assertEquals("大学英语III", exams[0].courseName)
+        assertEquals("12", exams[0].seat)
+        assertEquals("3#A220", exams[0].location)
+    }
 }
