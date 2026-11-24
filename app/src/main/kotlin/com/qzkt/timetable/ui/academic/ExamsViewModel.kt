@@ -26,6 +26,8 @@ data class ExamsUiState(
     val needsRelogin: Boolean = false,
     /** 教务返回页面的摘要：没解析出考试时给「查看原始页面」用，便于排查页面改版。 */
     val pageSnippet: String = "",
+    /** 学校系统把我们当高频请求、强制注销了登录。 */
+    val rateLimited: Boolean = false,
 )
 
 /**
@@ -43,6 +45,27 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun refresh() {
         if (_state.value.loading) return
+
+        // 被学校限流过就歇一会儿：立刻重试只会再被注销一次，而且注销后要重新登录才能恢复。
+        val limitedAgo = System.currentTimeMillis() - Cooldown.rateLimitedAt
+        if (Cooldown.rateLimitedAt > 0 && limitedAgo < Cooldown.BAN_WINDOW_MS) {
+            val minutes = ((Cooldown.BAN_WINDOW_MS - limitedAgo) / 60_000).coerceAtLeast(1)
+            _state.value = ExamsUiState(
+                hasLoaded = true,
+                error = "刚才被教务系统判定为操作过于频繁，已经把登录注销了。请先「去应用内登录」重新登录，" +
+                    "并等大约 " + minutes + " 分钟再查，免得又被踢。",
+                needsRelogin = true,
+                rateLimited = true,
+            )
+            return
+        }
+        // 连点防护：两次查询至少隔 15 秒。
+        val sinceLast = System.currentTimeMillis() - Cooldown.lastQueryAt
+        if (Cooldown.lastQueryAt > 0 && sinceLast < Cooldown.MIN_INTERVAL_MS) {
+            return
+        }
+        Cooldown.lastQueryAt = System.currentTimeMillis()
+
         viewModelScope.launch {
             val settings = withContext(Dispatchers.IO) { container.settingsStore.settings.first() }
             if (settings.baseUrl.isBlank() || settings.username.isBlank()) {
@@ -56,6 +79,7 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
 
             var sessionExpired = false
             var pageMissing = false
+            var rateLimited = false
             var snippet = ""
 
             if (settings.hasSession) {
@@ -73,6 +97,8 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
                     return@launch
                 }
                 snippet = outcome?.pageSnippet.orEmpty()
+                rateLimited = outcome?.rateLimited == true
+                if (outcome?.rateLimited == true) Cooldown.rateLimitedAt = System.currentTimeMillis()
                 sessionExpired = outcome != null && !outcome.loggedIn
                 pageMissing = outcome != null && outcome.loggedIn && outcome.usedPath == null
             }
@@ -119,9 +145,14 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
             _state.value = ExamsUiState(
                 exams = emptyList(),
                 hasLoaded = true,
-                needsRelogin = sessionExpired,
+                needsRelogin = sessionExpired || rateLimited,
                 pageSnippet = snippet,
+                rateLimited = rateLimited,
                 error = when {
+                    // 这一条必须和「会话过期」分开说：是查询太密被学校踢了，重新登录就能恢复，
+                    // 而且要提醒用户别反复点，否则又会立刻被踢。
+                    rateLimited -> "教务系统提示操作过于频繁，已经把你的登录注销了。请点「去应用内登录」重新登录，" +
+                        "之后隔一会儿再查考试（别连续点重试）。"
                     sessionExpired -> "登录状态已失效，考试安排查不到。请在页面里登录一次再试。"
                     pageMissing -> "没找到教务系统里的考试安排页面，可能这所学校没开这个入口。"
                     else -> null
@@ -129,6 +160,19 @@ class ExamsViewModel(private val container: AppContainer) : ViewModel() {
             )
         }
     }
+}
+
+/**
+ * 查询节流。放在 object 里（而不是 ViewModel 字段）是因为离开页面再进来会新建 ViewModel，
+ * 实例字段挡不住「反复进页面」这种情况。
+ */
+private object Cooldown {
+    /** 两次查询的最小间隔：学校对高频操作很敏感。 */
+    const val MIN_INTERVAL_MS = 15_000L
+    /** 被限流后的静默期。 */
+    const val BAN_WINDOW_MS = 10 * 60_000L
+    var lastQueryAt: Long = 0
+    var rateLimitedAt: Long = 0
 }
 
 class ExamsViewModelFactory(private val container: AppContainer) : ViewModelProvider.Factory {

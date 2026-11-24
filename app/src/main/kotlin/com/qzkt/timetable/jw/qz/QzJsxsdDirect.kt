@@ -79,6 +79,8 @@ internal class QzJsxsdDirect(
         val usedPath: String? = null,
         /** 页面内容摘要（前 400 字），页面没认出来时给诊断用。 */
         val pageSnippet: String = "",
+        /** 学校把我们当成高频请求，已经强制注销了登录（要重新登录才能恢复）。 */
+        val rateLimited: Boolean = false,
     )
 
     /**
@@ -177,138 +179,79 @@ internal class QzJsxsdDirect(
             return null
         }
 
+        // 请求预算：总共最多 3 次请求。
+        // 海都学院的强智对「同一会话短时间内多次请求」很敏感，实测超量后会直接
+        // 注销登录并返回「您操作系统过于频繁，已被注销登录」，得重新登录才能恢复。
+        // 所以这里只按最可能的路径查一次 GET（顺便拿学期选项）＋一次 POST。
+        var requests = 0
+        var rateLimited = false
+
+        fun banned(html: String): Boolean {
+            val t = html.replace(Regex("\\s+"), "")
+            if (t.contains("操作过于频繁") || t.contains("已被注销登录") || t.contains("请勿高频操作")) {
+                rateLimited = true
+                return true
+            }
+            return false
+        }
+
+        fun getOnce(url: String): String? {
+            requests++
+            return runCatching { get(client, url, cookie) }.getOrNull()
+        }
+
+        fun postOnce(url: String, form: Map<String, String>): String? {
+            requests++
+            return runCatching { post(client, url, cookie, form) }.getOrNull()
+        }
+
         try {
-            val discovered = runCatching { discoverExamPaths(client, normalizedBase, cookie) }.getOrNull().orEmpty()
-            val candidates = (discovered + EXAM_PATHS.map { normalizedBase + it }).distinct()
-            val reachable = LinkedHashSet<String>()
+            val listUrl = normalizedBase + EXAM_PATHS.first()
 
-            // 会话到底还行不行：用课表首页探一次。考试页的 GET 可能被学校拒绝（只认 POST），
-            // 不能因为考试页返回登录页就直接告诉用户「登录失效」。
-            var sessionOk = false
-            for (homePath in QzJsxsdAdapter.HOME_PATHS.take(2)) {
-                val probe = runCatching { get(client, normalizedBase + homePath, cookie) }.getOrNull() ?: continue
-                if (probe.isNotBlank() && !probe.isLoginPage()) {
-                    sessionOk = true
-                    break
+            // 第 1 次请求：GET 列表页。多数学校默认就查当前学期；顺带把学期选项抠出来。
+            val first = getOnce(listUrl)
+            if (first != null) {
+                if (banned(first)) {
+                    PluginLog.w("教务", "考试查询被限流：学校提示操作过于频繁，本次不发后续请求")
+                } else {
+                    tryParseWithFrames(first, listUrl)?.let {
+                        return@withContext ExamsOutcome(it, loggedIn = true, usedPath = listUrl, pageSnippet = snippet)
+                    }
                 }
             }
 
-            // 第一轮：直接 GET（有些学校默认就查当前学期）
-            for (url in candidates) {
-                val html = runCatching { get(client, url, cookie) }.getOrNull() ?: continue
-                tryParseWithFrames(html, url)?.let {
-                    return@withContext ExamsOutcome(it, loggedIn = true, usedPath = url, pageSnippet = snippet)
-                }
-                if (html.isLoginPage()) continue
-                reachable += url
-            }
-
-            // 学期候选：页面上抓到的在前（selected 的排第一），再按当前日期推算
-            examTermCandidates().forEach { (xn, xq) -> terms += "$xn-$xq" }
-            val termList = terms.take(4)
-
-            fun forms(term: String): List<Map<String, String>> {
-                val parts = term.split("-")
-                val xn = parts.getOrNull(0).orEmpty() + "-" + parts.getOrNull(1).orEmpty()
-                val xq = parts.getOrNull(2).orEmpty()
-                return listOf(
-                    mapOf("xnxq01id" to term, "xqlbmc" to "", "ksmcdm" to ""),
-                    mapOf("xnxqid" to term, "xqlbmc" to ""),
-                    mapOf("xn" to xn, "xq" to xq),
-                )
-            }
-
-            fun hit(exams: List<ExamInfo>, url: String): ExamsOutcome {
-                PluginLog.i("教务", "考试查询成功：" + url + " 共 " + exams.size + " 条")
-                return ExamsOutcome(exams, loggedIn = true, usedPath = url, pageSnippet = snippet)
-            }
-
-            // 优先用「列表页」这个标准地址，没探到就用第一个能打开的候选
-            val primary = reachable.firstOrNull { it.contains("xsksap_list") }
-                ?: reachable.firstOrNull()
-                ?: (normalizedBase + EXAM_PATHS.first())
-
-            // 第二轮：强智标准 POST（xnxq01id），每个学期试一次，命中即停
-            for (term in termList) {
-                val html = runCatching { post(client, primary, cookie, forms(term).first()) }.getOrNull() ?: continue
-                tryParse(html, primary)?.let { return@withContext hit(it, primary) }
-                if (html.isLoginPage()) break
-            }
-
-            // 第三轮：换参数写法（xnxqid / xn+xq）与 query，参数只试前两个学期
-            for (term in termList.take(2)) {
-                for (form in forms(term).drop(1)) {
-                    val html = runCatching { post(client, primary, cookie, form) }.getOrNull() ?: continue
-                    tryParse(html, primary)?.let { return@withContext hit(it, primary) }
-                    if (html.isLoginPage()) break
-                }
-                val separator = if (primary.contains('?')) "&" else "?"
-                val viaQuery = runCatching { get(client, primary + separator + "xnxq01id=" + term, cookie) }
-                    .getOrNull() ?: continue
-                tryParse(viaQuery, primary)?.let { return@withContext hit(it, primary) }
-            }
-
-            // 第四轮：其它候选地址兜底（只用第一个学期试一次）
-            val firstTerm = termList.firstOrNull()
-            if (firstTerm != null) {
-                for (url in (reachable + EXAM_PATHS.map { normalizedBase + it }).distinct()
-                    .filter { it != primary }.take(2)
-                ) {
-                    val html = runCatching { post(client, url, cookie, forms(firstTerm).first()) }.getOrNull() ?: continue
-                    tryParse(html, url)?.let { return@withContext hit(it, url) }
+            // 第 2 次请求：按学期 POST（只试一个学期，页面上 selected 的优先，否则按当前日期推算）
+            if (!rateLimited && requests < 3) {
+                examTermCandidates().forEach { (xn, xq) -> terms += "$xn-$xq" }
+                val term = terms.firstOrNull()
+                if (term != null) {
+                    val html = postOnce(
+                        listUrl,
+                        mapOf("xnxq01id" to term, "xqlbmc" to "", "ksmcdm" to ""),
+                    )
+                    if (html != null && !banned(html)) {
+                        tryParse(html, listUrl)?.let {
+                            return@withContext ExamsOutcome(it, loggedIn = true, usedPath = listUrl, pageSnippet = snippet)
+                        }
+                    }
                 }
             }
 
             PluginLog.w(
                 "教务",
-                "考试查询没出结果：主地址 " + primary + "、学期 " + termList + "、登录页=" + sawLoginPage +
-                    "、最后页面=" + snippet.take(120),
+                "考试查询没出结果：地址 " + listUrl + "、学期 " + terms.take(3) + "、请求次数 " + requests +
+                    "、登录页=" + sawLoginPage + "、限流=" + rateLimited + "、最后页面=" + snippet.take(120),
             )
-            // 课表页能打开就说明会话是好的（登录失效的提示别误报）
-            ExamsOutcome(emptyList(), loggedIn = sessionOk || !sawLoginPage, usedPath = usedPath, pageSnippet = snippet)
+            ExamsOutcome(
+                emptyList(),
+                loggedIn = !sawLoginPage && !rateLimited,
+                usedPath = usedPath,
+                pageSnippet = snippet,
+            )
         } finally {
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()
         }
-    }
-
-    /**
-     * 从教务主界面的菜单里找「考试安排」的地址。
-     *
-     * 新版一体化的菜单是 JS 动态生成的，`<a>` 常常扫不到，所以页面原文里的
-     * `xsks` / `ksap` 地址也一起挖；菜单放在 iframe 里时把 iframe 也抓一遍。
-     */
-    private fun discoverExamPaths(client: OkHttpClient, base: String, cookie: String?): List<String> {
-        val found = mutableListOf<String>()
-        for (path in QzJsxsdAdapter.HOME_PATHS) {
-            val pageUrl = base + path
-            val pageHtml = runCatching { get(client, pageUrl, cookie) }.getOrNull() ?: continue
-            if (pageHtml.isBlank() || pageHtml.isLoginPage()) continue
-
-            val doc = runCatching { Jsoup.parse(pageHtml, pageUrl) }.getOrNull() ?: continue
-            collectExamLinks(doc, pageUrl, found)
-
-            for (frame in doc.select("iframe[src], frame[src]")) {
-                val frameUrl = pageUrl.toHttpUrlOrNull()?.resolve(frame.attr("src"))?.toString() ?: continue
-                val frameHtml = runCatching { get(client, frameUrl, cookie) }.getOrNull() ?: continue
-                if (frameHtml.isBlank() || frameHtml.isLoginPage()) continue
-                collectExamLinks(Jsoup.parse(frameHtml, frameUrl), frameUrl, found)
-            }
-        }
-        return found.distinct()
-    }
-
-    private fun collectExamLinks(doc: org.jsoup.nodes.Document, pageUrl: String, into: MutableList<String>) {
-        fun add(href: String) {
-            if (href.isBlank() || href.startsWith("javascript", ignoreCase = true)) return
-            pageUrl.toHttpUrlOrNull()?.resolve(href)?.toString()?.let { into += it }
-        }
-
-        doc.select("a[href]").forEach { anchor ->
-            val href = anchor.attr("href").trim()
-            if (anchor.text().contains("考试") || EXAM_URL_PATTERN.containsMatchIn(href)) add(href)
-        }
-        EXAM_URL_PATTERN.findAll(doc.body().html()).map { it.groupValues[1] }.forEach(::add)
     }
 
     /** 当前学期的 `xn` / `xq`，再补一个相邻学期：学校放假期间两边都可能查得到。 */
