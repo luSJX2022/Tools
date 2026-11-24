@@ -3,7 +3,9 @@ package com.qzkt.timetable.jw.qz
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import java.nio.charset.Charset
 import java.util.concurrent.TimeUnit
 
@@ -18,12 +20,26 @@ internal object QzHttp {
     const val USER_AGENT =
         "Mozilla/5.0 (Linux; U; Mobile; Android 13; zh-cn) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
 
+    /**
+     * 所有打教务网关的请求都要过的闸门：考试 / 成绩 / 课表共用同一个限速器。
+     *
+     * 这里用拦截器而不是在每个调用点 sleep，原因是这三条路会同时被触发
+     * （进成绩页、点考试、后台同步），只在调用点加间隔挡不住叠加。
+     */
+    internal object RateLimitInterceptor : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            QzRateLimiter.acquire()
+            return chain.proceed(chain.request())
+        }
+    }
+
     fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .cookieJar(InMemoryCookieJar())
+        .addInterceptor(RateLimitInterceptor)
         .build()
 
     /**
@@ -38,6 +54,7 @@ internal object QzHttp {
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
+        .addInterceptor(RateLimitInterceptor)
         .build()
 
     /** 会话级的 cookie 存储：登录拿到的 JSESSIONID 之类全靠它。 */

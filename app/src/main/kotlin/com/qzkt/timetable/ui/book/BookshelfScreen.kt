@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.qzkt.timetable.data.book.Book
+import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.data.book.BookSources
 import com.qzkt.timetable.data.book.OnlineBook
 
@@ -630,6 +631,14 @@ private fun OnlineBookRow(onlineBook: com.qzkt.timetable.data.book.OnlineBook, o
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
+                        // 封面加载失败别静默：写进「图书」插件日志，方便定位是网络、证书还是防盗链
+                        onError = { state ->
+                            PluginLog.w(
+                                "图书",
+                                "封面加载失败：「" + onlineBook.name + "」" + onlineBook.cover +
+                                    "｜" + (state.result.throwable.message ?: state.result.throwable.javaClass.simpleName),
+                            )
+                        },
                     )
                 } else {
                     Text("无封面", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -699,6 +708,13 @@ private fun BookRow(book: Book, onClick: () -> Unit, onDelete: () -> Unit) {
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
+                        onError = { state ->
+                            PluginLog.w(
+                                "图书",
+                                "书架封面加载失败：「" + book.name + "」" + book.cover +
+                                    "｜" + (state.result.throwable.message ?: state.result.throwable.javaClass.simpleName),
+                            )
+                        },
                     )
                 } else {
                     Icon(

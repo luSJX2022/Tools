@@ -53,6 +53,7 @@ class GradesViewModel(private val container: AppContainer) : ViewModel() {
             // 有应用内登录留下的会话就先走会话：学校有反自动化校验时账号密码必败，
             // 和课表同步的选路逻辑（SyncEngine）保持一致。
             var sessionExpired = false
+            var rateLimited = false
             if (settings.hasSession) {
                 val outcome = runCatching {
                     withContext(Dispatchers.IO) {
@@ -66,6 +67,16 @@ class GradesViewModel(private val container: AppContainer) : ViewModel() {
                 // 会话还在但解析不出成绩（排版不同）也留给密码路兜底；
                 // 只有「被打回登录页」才记成过期，密码路也失败时用来决定提示语
                 sessionExpired = outcome != null && !outcome.loggedIn
+                rateLimited = outcome?.rateLimited == true
+            }
+
+            // 已经被学校判定高频注销：别再走密码路重登，那会立刻又被打回，只会更糟
+            if (rateLimited) {
+                _state.value = GradesUiState(
+                    error = "教务系统提示操作过于频繁，已经把登录注销了。请先「去应用内登录」重新登录，并等一会儿再查。",
+                    needsRelogin = true,
+                )
+                return@launch
             }
 
             // 会话过期就用账号密码自动登录换新会话（新一代强智登录纯 HTTP 能过，见 QzJsxsdAutoLogin），

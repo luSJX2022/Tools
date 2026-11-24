@@ -6,6 +6,7 @@ import com.qzkt.timetable.jw.GradeInfo
 import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.jw.extractExamTermOptions
 import com.qzkt.timetable.jw.isLoginPageHtml
+import com.qzkt.timetable.jw.isRateLimitedHtml
 import com.qzkt.timetable.jw.parseExamsHtml
 import com.qzkt.timetable.jw.parseGradesHtml
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter.Companion.TIMETABLE_PATHS
@@ -61,6 +62,8 @@ internal class QzJsxsdDirect(
     data class GradesOutcome(
         /** 解析出来的成绩；为空表示这条路没走通。 */
         val grades: List<GradeInfo>,
+        /** 被学校判定高频、已注销登录。 */
+        val rateLimited: Boolean = false,
         /**
          * 是否已经是登录状态。
          *
@@ -101,8 +104,18 @@ internal class QzJsxsdDirect(
         val client = clientFactory()
         val normalizedBase = runCatching { resolveBase(base) }.getOrElse { throw JwException("地址不对：$base") }
         var sawLoginPage = false
+        var rateLimited = false
+
+        /** 限流页一出现就必须停手：继续请求只会让登录被注销得更彻底。 */
+        fun rateLimitedPage(html: String): Boolean {
+            if (!isRateLimitedHtml(html)) return false
+            rateLimited = true
+            QzRateLimiter.noteRateLimited()
+            return true
+        }
 
         fun handle(html: String): List<GradeInfo>? {
+            if (rateLimitedPage(html)) return null
             if (html.isLoginPage()) {
                 sawLoginPage = true
                 return null
@@ -113,8 +126,10 @@ internal class QzJsxsdDirect(
 
         try {
             for (path in listOf("/xxwcqk/xxwcqkOnkcxz.do", "/kscj/cjcx_query")) {
+                if (rateLimited) break
                 val url = normalizedBase + path
                 repeat(2) {
+                    if (rateLimited) return@repeat
                     val html = runCatching { get(client, url, cookie) }.getOrNull() ?: return@repeat
                     handle(html)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
                     // 被打回登录页说明会话没登进去 / 已过期，重试也没用，直接换下一个地址
@@ -122,14 +137,16 @@ internal class QzJsxsdDirect(
                 }
             }
 
-            val queried = runCatching {
-                post(client, "$normalizedBase/kscj/cjcx_query", cookie, form = mapOf("kksj" to "", "kcxz" to "", "kcmc" to "", "xsfs" to "1"))
-            }.getOrNull()
-            if (queried != null) {
-                handle(queried)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
+            if (!rateLimited) {
+                val queried = runCatching {
+                    post(client, "$normalizedBase/kscj/cjcx_query", cookie, form = mapOf("kksj" to "", "kcxz" to "", "kcmc" to "", "xsfs" to "1"))
+                }.getOrNull()
+                if (queried != null) {
+                    handle(queried)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
+                }
             }
 
-            GradesOutcome(emptyList(), loggedIn = !sawLoginPage)
+            GradesOutcome(emptyList(), loggedIn = !sawLoginPage && !rateLimited, rateLimited = rateLimited)
         } finally {
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()
@@ -187,12 +204,11 @@ internal class QzJsxsdDirect(
         var rateLimited = false
 
         fun banned(html: String): Boolean {
-            val t = html.replace(Regex("\\s+"), "")
-            if (t.contains("操作过于频繁") || t.contains("已被注销登录") || t.contains("请勿高频操作")) {
-                rateLimited = true
-                return true
-            }
-            return false
+            if (!isRateLimitedHtml(html)) return false
+            rateLimited = true
+            // 让全局闸门也进入静默期：接下来的成绩 / 课表请求同样别发，否则会继续被注销
+            QzRateLimiter.noteRateLimited()
+            return true
         }
 
         fun getOnce(url: String): String? {

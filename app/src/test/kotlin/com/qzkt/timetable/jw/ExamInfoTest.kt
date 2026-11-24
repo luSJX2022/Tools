@@ -1,6 +1,7 @@
 package com.qzkt.timetable.jw
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -183,5 +184,42 @@ class ExamInfoTest {
         assertEquals("大学英语III", exams[0].courseName)
         assertEquals("12", exams[0].seat)
         assertEquals("3#A220", exams[0].location)
+    }
+
+    @Test
+    fun `login page detection requires a real login form`() {
+        val login = """
+            <html><head><title>登录</title></head><body>
+              <form id="loginForm" action="/jsxsd/xk/LoginToXk" method="post">
+                <input id="userAccount" name="userAccount"><input id="userPassword" name="userPassword">
+              </form>
+            </body></html>
+        """.trimIndent()
+        assertTrue(isLoginPageHtml(login))
+
+        // 正常考试页里嵌了带 loginForm 字样的脚本，不能被当成登录页
+        val examPage = """
+            <html><body>
+              <script>var s = "loginForm"; var u = "userAccount";</script>
+              <table><tr><th>考试时间</th><th>考试课程</th><th>考试地点</th></tr>
+                <tr><td>2026-11-21 19:00~21:00</td><td>大学英语III</td><td>3#A220</td></tr>
+              </table>
+            </body></html>
+        """.trimIndent()
+        assertFalse(isLoginPageHtml(examPage))
+
+        assertFalse(isLoginPageHtml(""))
+    }
+
+    @Test
+    fun `rate limited page detected`() {
+        val limited = """
+            <script language='javascript'>alert('温馨提示：您操作系统过于频繁，已被注销登录，正常使用请勿高频操作！');
+            top.location.href='https://zs.hdxy.edu.cn/tpass';</script>
+        """.trimIndent()
+        assertTrue(isRateLimitedHtml(limited))
+        // 正常页面不能误判
+        assertFalse(isRateLimitedHtml("<table><tr><th>考试时间</th></tr></table>"))
+        assertFalse(isRateLimitedHtml(""))
     }
 }

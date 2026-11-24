@@ -146,6 +146,21 @@ internal fun extractExamTermOptions(html: String): List<String> {
 }
 
 /**
+ * 页面是不是「操作过于频繁，已被注销登录」那种限流提示页。
+ *
+ * 强智被高频请求时的固定响应：alert('温馨提示：您操作系统过于频繁，已被注销登录，
+ * 正常使用请勿高频操作！'); top.location.href='.../tpass'。
+ * 命中后必须停止后续请求，否则会一直被注销。
+ */
+internal fun isRateLimitedHtml(html: String): Boolean {
+    if (html.isBlank()) return false
+    val squashed = html.replace(Regex("""s+"""), "")
+    return squashed.contains("操作过于频繁") ||
+        squashed.contains("已被注销登录") ||
+        squashed.contains("请勿高频操作")
+}
+
+/**
  * 判断一页 HTML 是不是教务的登录页。
  *
  * 不能只做字符串包含：强智的页面里常嵌着登录弹窗/脚本片段，含 `loginForm` 字样但其实是正常页面，
