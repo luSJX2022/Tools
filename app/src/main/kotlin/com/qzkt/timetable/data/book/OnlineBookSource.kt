@@ -97,7 +97,7 @@ class Quanben5Source(
                     bookUrl = href,
                     name = name,
                     author = block.selectFirst(".author b")?.text()?.trim(),
-                    cover = block.selectFirst(".pic img")?.attr("src")?.takeIf { it.isNotBlank() },
+                    cover = normalizeQuanbenCover(block.selectFirst(".pic img")?.attr("src")),
                     description = block.selectFirst(".description")?.text()?.trim(),
                 )
             }
@@ -122,7 +122,7 @@ class Quanben5Source(
                 bookUrl = href,
                 name = name,
                 author = block.selectFirst(".author b")?.text()?.trim(),
-                cover = block.selectFirst(".pic img")?.attr("src")?.takeIf { it.isNotBlank() },
+                cover = normalizeQuanbenCover(block.selectFirst(".pic img")?.attr("src")),
                 description = block.selectFirst(".description")?.text()?.trim(),
             )
         }
@@ -197,6 +197,24 @@ class Quanben5Source(
         }
         return out.toString()
     }
+}
+
+/**
+ * 全本小说网封面 URL 归一化。
+ *
+ * 封面图床 img.c0m.io 的服务端只发叶子证书（中间 CA 是 Let's Encrypt 的过渡证书 YE1），
+ * Android 的图片下载器不会像浏览器那样去 AIA 抓中间证书，导致 HTTPS 握手失败、封面加载不出。
+ * 实测该图床支持 HTTP 明文返回同一张图（App 已允许 cleartext），封面又非敏感数据，
+ * 所以把封面降级成 http:// 即可绕过证书链问题；其它书源的封面 URL 原样返回。
+ */
+internal fun normalizeQuanbenCover(url: String?): String? {
+    // 空白一律当「没有封面」（原来的 takeIf { it.isNotBlank() } 语义）
+    if (url.isNullOrBlank()) return null
+    if (!url.startsWith("https://", ignoreCase = true)) return url
+    val rest = url.substring("https://".length)
+    val host = rest.substringBefore('/').substringBefore('?').substringBefore('#').lowercase()
+    val isQuanbenCdn = host == "c0m.io" || host.endsWith(".c0m.io")
+    return if (isQuanbenCdn) "http://" + rest else url
 }
 
 /**

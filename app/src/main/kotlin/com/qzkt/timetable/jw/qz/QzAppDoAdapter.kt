@@ -94,7 +94,8 @@ class QzAppDoAdapter(
             .callTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)
             .cookieJar(InMemoryCookieJar())
-            // app.do 和 jsxsd 打的是同一台网关，共用同一个限速器（见 QzRateLimiter）
+            // app.do 和 jsxsd 打的是同一台网关，共用去重与限速（见 QzRequestGate / QzRateLimiter）
+            .addInterceptor(QzRequestGate.interceptor())
             .addInterceptor(QzHttp.RateLimitInterceptor)
             .build()
 

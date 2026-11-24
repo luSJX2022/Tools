@@ -128,9 +128,10 @@ internal class QzJsxsdDirect(
             for (path in listOf("/xxwcqk/xxwcqkOnkcxz.do", "/kscj/cjcx_query")) {
                 if (rateLimited) break
                 val url = normalizedBase + path
-                repeat(2) {
+                repeat(2) { attempt ->
                     if (rateLimited) return@repeat
-                    val html = runCatching { get(client, url, cookie) }.getOrNull() ?: return@repeat
+                    // 第二遍是「空页重试」，必须绕过短缓存真的再打一次
+                    val html = runCatching { get(client, url, cookie, noCache = attempt > 0) }.getOrNull() ?: return@repeat
                     handle(html)?.let { return@withContext GradesOutcome(it, loggedIn = true) }
                     // 被打回登录页说明会话没登进去 / 已过期，重试也没用，直接换下一个地址
                     if (html.isLoginPage()) return@repeat
@@ -349,13 +350,20 @@ internal class QzJsxsdDirect(
         return null
     }
 
-    private fun get(client: OkHttpClient, url: String, cookie: String?): String {
+    /**
+     * GET 一个教务页面。
+     *
+     * @param noCache true 表示这次一定要真的打网络（用于「空页重试一遍」这类逻辑），
+     *   否则连续两次同样的 GET 会被 [QzRequestGate] 的短缓存直接复用，重试就失去意义。
+     */
+    private fun get(client: OkHttpClient, url: String, cookie: String?, noCache: Boolean = false): String {
         val httpUrl = url.toHttpUrlOrNull() ?: throw JwException("地址格式不对：$url")
         val builder = Request.Builder()
             .url(httpUrl)
             .get()
             .header("User-Agent", QzHttp.USER_AGENT)
             .header("Referer", "${httpUrl.scheme}://${httpUrl.host}/jsxsd/")
+        if (noCache) builder.header(QzRequestGate.NO_CACHE_HEADER, "1")
         if (!cookie.isNullOrBlank()) builder.header("Cookie", cookie)
 
         client.newCall(builder.build()).execute().use { response ->

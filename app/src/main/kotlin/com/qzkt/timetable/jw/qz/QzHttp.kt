@@ -39,6 +39,8 @@ internal object QzHttp {
         .callTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .cookieJar(InMemoryCookieJar())
+        // 先去重（同样的 GET 直接复用/等待），再进限速闸门：重复请求根本不该占用配额
+        .addInterceptor(QzRequestGate.interceptor())
         .addInterceptor(RateLimitInterceptor)
         .build()
 
@@ -54,6 +56,7 @@ internal object QzHttp {
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
+        .addInterceptor(QzRequestGate.interceptor())
         .addInterceptor(RateLimitInterceptor)
         .build()
 
