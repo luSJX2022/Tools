@@ -7,6 +7,7 @@ import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.jw.extractExamTermOptions
 import com.qzkt.timetable.jw.isLoginPageHtml
 import com.qzkt.timetable.jw.describeExamPage
+import com.qzkt.timetable.jw.extractExamFormFields
 import com.qzkt.timetable.jw.isRateLimitedHtml
 import com.qzkt.timetable.jw.parseExamsHtml
 import com.qzkt.timetable.jw.parseGradesHtml
@@ -239,15 +240,26 @@ internal class QzJsxsdDirect(
                 }
             }
 
-            // 第 2 次请求：按学期 POST（只试一个学期，页面上 selected 的优先，否则按当前日期推算）
+            // 第 2 次请求：模拟「点一下查询按钮」。
+            // 强智的 xsksap_list 首屏只渲染查询条件 + 空表（上面日志里就是 2 行），
+            // 必须按页面上的表单原样提交才会填数据。优先用页面真实字段，猜的参数只作兜底。
             if (!rateLimited && requests < 3) {
                 examTermCandidates().forEach { (xn, xq) -> terms += "$xn-$xq" }
+                val pageFields = extractExamFormFields(first.orEmpty())
+                if (pageFields.isNotEmpty()) {
+                    PluginLog.i("教务", "考试查询：按页面表单提交（" + pageFields.size + " 个字段：" +
+                        pageFields.keys.take(8).joinToString(",") + "）")
+                }
                 val term = terms.firstOrNull()
-                if (term != null) {
-                    val html = postOnce(
-                        listUrl,
-                        mapOf("xnxq01id" to term, "xqlbmc" to "", "ksmcdm" to ""),
-                    )
+                val form = if (pageFields.isNotEmpty()) {
+                    pageFields
+                } else if (term != null) {
+                    mapOf("xnxq01id" to term, "xqlbmc" to "", "ksmcdm" to "")
+                } else {
+                    emptyMap()
+                }
+                if (form.isNotEmpty()) {
+                    val html = postOnce(listUrl, form)
                     if (html != null && !banned(html)) {
                         tryParse(html, listUrl)?.let {
                             return@withContext ExamsOutcome(it, loggedIn = true, usedPath = listUrl, pageSnippet = snippet)

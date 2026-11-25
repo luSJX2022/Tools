@@ -192,6 +192,47 @@ internal fun parseExamsHtml(html: String): List<ExamInfo> {
 }
 
 /**
+ * 从「考试安排」查询页里抠出**真实表单字段**，用来原样提交。
+ *
+ * 强智的 xsksap_list 首屏只渲染查询条件 + 空表，要点「查询」按钮（提交表单）才会填数据。
+ * 直接猜参数名（xnxq01id 之类）各校差异大、还可能缺校验字段；把页面上的 hidden input
+ * 和 select 的当前值全部带上，才是真正「模拟点一下查询按钮」。
+ *
+ * 返回值不含提交按钮；没有表单时返回空 map，调用方退回猜参数。
+ */
+internal fun extractExamFormFields(html: String): Map<String, String> {
+    if (html.isBlank()) return emptyMap()
+    val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return emptyMap()
+
+    val forms = doc.select("form")
+    val form = forms.firstOrNull { it.attr("action").contains("xsks", ignoreCase = true) }
+        ?: forms.firstOrNull { it.select("[name=xnxq01id], [name=xnxqid]").isNotEmpty() }
+        ?: forms.firstOrNull { it.select("input[type=hidden]").size >= 2 }
+        ?: return emptyMap()
+
+    val fields = LinkedHashMap<String, String>()
+    form.select("input").forEach { input ->
+        val name = input.attr("name").trim()
+        if (name.isEmpty()) return@forEach
+        when (input.attr("type").lowercase()) {
+            "submit", "button", "reset", "image", "file" -> return@forEach
+            "checkbox", "radio" -> {
+                if (input.hasAttr("checked")) fields[name] = input.attr("value")
+            }
+            else -> fields[name] = input.attr("value")
+        }
+    }
+    form.select("select").forEach { select ->
+        val name = select.attr("name").trim()
+        if (name.isEmpty()) return@forEach
+        val option = select.select("option[selected]").firstOrNull()
+            ?: select.select("option").firstOrNull()
+        option?.let { fields[name] = it.attr("value") }
+    }
+    return fields
+}
+
+/**
  * 解析失败时的诊断摘要：告诉用户/开发者「页面长什么样、卡在哪一步」。
  *
  * 线上教训：只把前 400 字原样打出来时，看到的永远是 DOCTYPE 和 head，

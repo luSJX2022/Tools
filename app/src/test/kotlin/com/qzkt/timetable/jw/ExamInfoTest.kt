@@ -347,4 +347,38 @@ class ExamInfoTest {
         assertTrue("要打出数据行", d.contains("第2行"))
         assertTrue("要报解析结果", d.contains("解析出="))
     }
+
+    @Test
+    fun `extract real form fields from query page`() {
+        // 线上首屏：查询条件表单 + 空表（2 行）。提交按钮不能被带上。
+        val html = """
+            <html><head><title>我的考试 - 考试安排查询</title></head><body>
+            <form id="Form1" action="/jsxsd/xsks/xsksap_list" method="post">
+              <input type="hidden" name="xnxq01id" value="2026-2027-1">
+              <input type="hidden" name="xqlbmc" value="">
+              <select name="ksmcdm">
+                <option value="">全部场次</option>
+                <option value="1" selected>期末考试</option>
+              </select>
+              <input type="checkbox" name="onlyFail" value="1">
+              <input type="submit" name="submit" value="查询">
+            </form>
+            <table><tr><td>序号</td><td>课程名称</td></tr></table>
+            </body></html>
+        """.trimIndent()
+
+        val fields = extractExamFormFields(html)
+        assertEquals("2026-2027-1", fields["xnxq01id"])
+        assertEquals("", fields["xqlbmc"])
+        // 提交的是 option 的 value（浏览器的真实行为），不是显示文字
+        assertEquals("1", fields["ksmcdm"])
+        assertFalse("提交按钮不能带", fields.containsKey("submit"))
+        assertFalse("未勾选的复选框不能带", fields.containsKey("onlyFail"))
+    }
+
+    @Test
+    fun `no form yields empty map`() {
+        assertTrue(extractExamFormFields("<html><body>没有表单</body></html>").isEmpty())
+        assertTrue(extractExamFormFields("").isEmpty())
+    }
 }
