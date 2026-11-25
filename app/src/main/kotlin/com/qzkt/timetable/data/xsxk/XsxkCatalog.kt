@@ -1,5 +1,6 @@
 package com.qzkt.timetable.data.xsxk
 
+import com.qzkt.timetable.data.net.ipv4First
 import com.qzkt.timetable.jw.qz.QzHttp
 import com.qzkt.timetable.jw.qz.QzJsxsdAdapter
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -138,6 +139,7 @@ internal val COURSE_SELECT_CANDIDATES = listOf(
 fun discoverCourseSelectUrls(baseUrl: String, cookie: String): List<String> {
     val candidates = mutableListOf<String>()
     val client = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()

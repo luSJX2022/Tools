@@ -1,5 +1,6 @@
 package com.qzkt.timetable.data.anime
 
+import com.qzkt.timetable.data.net.ipv4First
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -20,6 +21,7 @@ internal data class DoubanSubject(
 
 internal class DoubanSynopsisClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .callTimeout(15, TimeUnit.SECONDS)

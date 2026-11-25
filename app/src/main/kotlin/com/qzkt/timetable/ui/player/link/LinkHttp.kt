@@ -1,5 +1,6 @@
 package com.qzkt.timetable.ui.player.link
 
+import com.qzkt.timetable.data.net.ipv4First
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -15,6 +16,7 @@ import java.util.concurrent.TimeUnit
  * [com.qzkt.timetable.ui.player.PlaybackService] 里那套数据源。
  */
 internal fun defaultLinkClient(): OkHttpClient = OkHttpClient.Builder()
+    .ipv4First()
     // B站要看 Cookie 里的 buvid3 才肯给接口数据（见 LinkCookieJar）
     .cookieJar(LinkCookieJar())
     .connectTimeout(10, TimeUnit.SECONDS)

@@ -1,5 +1,6 @@
 package com.qzkt.timetable.data.anime
 
+import com.qzkt.timetable.data.net.ipv4First
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit
 /** Internet Archive search restricted to records explicitly marked Public Domain Mark or CC0. */
 class InternetArchiveSource(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)

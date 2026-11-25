@@ -1,6 +1,7 @@
 package com.qzkt.timetable.yxy
 
 import com.qzkt.timetable.data.PluginLog
+import com.qzkt.timetable.data.net.ipv4First
 import okhttp3.OkHttpClient
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -68,6 +69,7 @@ internal class YxyApiException(message: String) : IOException(message)
 
 internal class YxyClient(
     private val http: OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)

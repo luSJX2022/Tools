@@ -1,6 +1,7 @@
 package com.qzkt.timetable.data.book
 
 import android.net.Uri
+import com.qzkt.timetable.data.net.ipv4First
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -63,6 +64,7 @@ interface CategorizedBookSource : BookSource {
  */
 class Quanben5Source(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
@@ -223,6 +225,7 @@ internal fun normalizeQuanbenCover(url: String?): String? {
  */
 class GutenbergChineseSource(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
@@ -276,6 +279,7 @@ class GutenbergChineseSource(
  */
 class WikisourceChineseSource(
         private val client: OkHttpClient = OkHttpClient.Builder()
+            .ipv4First()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build(),
@@ -478,6 +482,7 @@ internal fun extractGutenbergText(html: String): String {
  */
 class InternetArchiveChineseSource(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
         .build(),
@@ -780,6 +785,7 @@ internal fun String.stripSiteJunk(): String {
  */
 class Kunnu8Source(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),

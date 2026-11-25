@@ -1,5 +1,6 @@
 package com.qzkt.timetable.data.tools
 
+import com.qzkt.timetable.data.net.ipv4First
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -201,6 +202,7 @@ class PddExpressApi(private val client: OkHttpClient = defaultClient()) {
         private val JSON_MEDIA = "application/json;charset=UTF-8".toMediaType()
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+            .ipv4First()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .callTimeout(40, TimeUnit.SECONDS)

@@ -1,5 +1,6 @@
 package com.qzkt.timetable.data.anime
 
+import com.qzkt.timetable.data.net.ipv4First
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -49,6 +50,7 @@ class MacCmsSource(
     override val endpointLabel: String get() = baseUrl
 
     private val client = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()

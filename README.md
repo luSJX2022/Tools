@@ -349,6 +349,7 @@ app/src/main/kotlin/com/qzkt/timetable/
 │   ├── AppLogStore.kt          应用日志（filesDir/logs/app.log，私有、有上限、自动脱敏 token/cookie）
 │   ├── PluginLog.kt            插件日志统一入口：tag = 插件名，异步写入上面那份 app.log
 │   ├── LogFilters.kt           日志行解析 / 按插件筛选（纯函数，有单测）
+│   ├── net/Ipv4FirstDns.kt     ★ 出网 DNS：IPv4 优先（所有 OkHttp 客户端共用）
 │   ├── anime/                  影视：模型、资源站客户端、本地分类规则（AnimeCategories）、收藏与进度
 │   ├── book/                   图书：5 个在线书源、本地 TXT 解析、封面归一化
 │   ├── tools/                  菜鸟包裹：拼多多接口、Cookie 存储、手动运单
@@ -417,6 +418,12 @@ SmartQzAdapter 的选法：地址里有 jsxsd 就先试网页版，否则先试 
 | 全局限速 | QzRateLimiter | 相邻请求最少间隔 1 秒；一旦识别到限流页，全局静默 10 分钟，期间成绩 / 课表也一起停 |
 
 识别到限流后，界面会明确提示「操作过于频繁、已注销登录，请重新登录并等待」，而不是误报「登录失效」。
+
+### 出网 DNS：IPv4 优先
+
+所有 OkHttp 客户端（教务、影视、图书、易校园、拼多多、更新检查、播放器）都装 `Ipv4FirstDns`：解析结果里 **IPv4 排前面，IPv6 一个不丢地排在后面当备用**。
+
+原因是线上日志里 `bfzyapi.com/[2a03:2880:...]:443` 反复超时 —— 手机网络常常「IPv6 能解析但连不上」，OkHttp 按 DNS 返回顺序逐个尝试，于是每次都先撞满 `connectTimeout(15s)` 才回落 IPv4，用户看到的就是影视页一直转圈。IPv4 优先把这次白等省掉了；纯 IPv6 网络（没有 A 记录）时顺序不变，不受影响。
 
 ---
 

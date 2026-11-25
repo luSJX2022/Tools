@@ -1,5 +1,6 @@
 package com.qzkt.timetable.jw.qz
 
+import com.qzkt.timetable.data.net.ipv4First
 import com.qzkt.timetable.jw.GradeInfo
 import com.qzkt.timetable.jw.JwAdapter
 import com.qzkt.timetable.jw.JwConfig
@@ -89,6 +90,7 @@ class QzAppDoAdapter(
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+            .ipv4First()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)

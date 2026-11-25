@@ -15,6 +15,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.qzkt.timetable.data.net.ipv4First
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -43,6 +44,7 @@ class PlaybackService : MediaSessionService() {
         // 表现就是频繁卡顿。
         val http = OkHttpDataSource.Factory(
             OkHttpClient.Builder()
+                .ipv4First()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)

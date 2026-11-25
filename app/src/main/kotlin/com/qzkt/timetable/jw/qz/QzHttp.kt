@@ -1,5 +1,6 @@
 package com.qzkt.timetable.jw.qz
 
+import com.qzkt.timetable.data.net.ipv4First
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -34,6 +35,7 @@ internal object QzHttp {
     }
 
     fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)
@@ -52,6 +54,7 @@ internal object QzHttp {
      * 用户就会看到「明明刚登录，却说登录失效」。
      */
     fun statelessClient(): OkHttpClient = OkHttpClient.Builder()
+        .ipv4First()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)

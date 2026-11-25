@@ -1,5 +1,6 @@
 package com.qzkt.timetable.cidaren
 
+import com.qzkt.timetable.data.net.ipv4First
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -43,6 +44,7 @@ object CidarenAi {
     /** 公共免费服务响应方差很大，read 给到 120s；callTimeout 必须比 read 更长才能等到它。 */
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .ipv4First()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .callTimeout(150, TimeUnit.SECONDS)
