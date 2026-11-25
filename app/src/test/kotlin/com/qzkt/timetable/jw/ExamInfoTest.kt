@@ -381,4 +381,31 @@ class ExamInfoTest {
         assertTrue(extractExamFormFields("<html><body>没有表单</body></html>").isEmpty())
         assertTrue(extractExamFormFields("").isEmpty())
     }
+
+    private fun resource(path: String): String =
+        javaClass.classLoader!!.getResource(path)!!.readText()
+
+    @Test
+    fun `real haidu exam table parses all three rows`() {
+        // 夹具是从内置浏览器里抓的**真实**结果页表格（海都学院 2026-2027-1）
+        val exams = parseExamsHtml(resource("exam/qz_exam_table.html"))
+        assertEquals(3, exams.size)
+
+        val first = exams[0]
+        assertEquals("毛泽东思想和中国特色社会主义理论体系概论", first.courseName)
+        assertEquals("BA090023", first.courseCode)
+        assertEquals(LocalDate.of(2026, 11, 21), first.date)
+        assertEquals(19 * 60, first.startMinute)
+        assertEquals(21 * 60, first.endMinute)
+        assertEquals("19:00~21:00", first.timeRangeText)
+        assertEquals("3#A220", first.location)
+
+        assertEquals("大学英语III", exams[1].courseName)
+        assertEquals(LocalDate.of(2026, 11, 22), exams[1].date)
+        assertEquals("3#A125", exams[1].location)
+
+        assertEquals("数字电子技术", exams[2].courseName)
+        assertEquals(LocalDate.of(2026, 11, 27), exams[2].date)
+        assertEquals("3#A101", exams[2].location)
+    }
 }

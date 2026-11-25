@@ -226,45 +226,41 @@ internal class QzJsxsdDirect(
         }
 
         try {
-            val listUrl = normalizedBase + EXAM_PATHS.first()
+            val listUrl = normalizedBase + "/xsks/xsksap_list"
+            val queryUrl = normalizedBase + "/xsks/xsksap_query"
 
-            // 第 1 次请求：GET 列表页。多数学校默认就查当前学期；顺带把学期选项抠出来。
-            val first = getOnce(listUrl)
-            if (first != null) {
-                if (banned(first)) {
-                    PluginLog.w("教务", "考试查询被限流：学校提示操作过于频繁，本次不发后续请求")
-                } else {
-                    tryParseWithFrames(first, listUrl)?.let {
-                        return@withContext ExamsOutcome(it, loggedIn = true, usedPath = listUrl, pageSnippet = snippet)
-                    }
-                }
+            // 海都学院强智的真实流程（用内置浏览器抓包确证过）：
+            //   1. GET  /xsks/xsksap_query  → 查询页，带 xnxqid 学期下拉（selected 就是当前学期）
+            //   2. POST /xsks/xsksap_list   → 结果页，表单字段 xqlbmc=&xnxqid=<学期>&xqlb=
+            // GET /xsks/xsksap_list 永远返回「未查询到数据」（那是没带查询条件的结果页），
+            // 所以**必须 POST**，这是之前一直查不到数据的真正原因。
+            val first = getOnce(queryUrl) ?: getOnce(listUrl)
+            if (first != null && banned(first)) {
+                PluginLog.w("教务", "考试查询被限流：学校提示操作过于频繁，本次不发后续请求")
             }
 
-            // 第 2 次请求：模拟「点一下查询按钮」。
-            // 强智的 xsksap_list 首屏只渲染查询条件 + 空表（上面日志里就是 2 行），
-            // 必须按页面上的表单原样提交才会填数据。优先用页面真实字段，猜的参数只作兜底。
-            if (!rateLimited && requests < 3) {
-                examTermCandidates().forEach { (xn, xq) -> terms += "$xn-$xq" }
-                val pageFields = extractExamFormFields(first.orEmpty())
-                if (pageFields.isNotEmpty()) {
-                    PluginLog.i("教务", "考试查询：按页面表单提交（" + pageFields.size + " 个字段：" +
-                        pageFields.keys.take(8).joinToString(",") + "）")
+            // 学期候选：优先用查询页上 selected 的那个，再按当前日期推算
+            extractExamTermOptions(first.orEmpty()).forEach { terms += it }
+            examTermCandidates().forEach { (xn, xq) -> terms += "$xn-$xq" }
+            // 页面上真实表单里的 xqlb / xqlbmc 也带上（浏览器里就是这么提交的）
+            val pageFields = extractExamFormFields(first.orEmpty())
+
+            // POST 结果页：每次只查一个学期，查不到就换下一个（最多 2 个，控制请求数）
+            var tried = 0
+            for (term in terms.take(2)) {
+                if (rateLimited || tried >= 2) break
+                tried++
+                val form = buildMap {
+                    putAll(pageFields.filterKeys { it == "xqlb" || it == "xqlbmc" })
+                    if (!containsKey("xqlb")) put("xqlb", "")
+                    if (!containsKey("xqlbmc")) put("xqlbmc", "")
+                    put("xnxqid", term)
                 }
-                val term = terms.firstOrNull()
-                val form = if (pageFields.isNotEmpty()) {
-                    pageFields
-                } else if (term != null) {
-                    mapOf("xnxq01id" to term, "xqlbmc" to "", "ksmcdm" to "")
-                } else {
-                    emptyMap()
-                }
-                if (form.isNotEmpty()) {
-                    val html = postOnce(listUrl, form)
-                    if (html != null && !banned(html)) {
-                        tryParse(html, listUrl)?.let {
-                            return@withContext ExamsOutcome(it, loggedIn = true, usedPath = listUrl, pageSnippet = snippet)
-                        }
-                    }
+                val html = postOnce(listUrl, form) ?: continue
+                if (banned(html)) break
+                tryParse(html, listUrl)?.let { exams ->
+                    PluginLog.i("教务", "考试查询成功：xnxqid=" + term + "，共 " + exams.size + " 条")
+                    return@withContext ExamsOutcome(exams, loggedIn = true, usedPath = listUrl, pageSnippet = snippet)
                 }
             }
 
@@ -415,10 +411,11 @@ internal class QzJsxsdDirect(
 }
 
 /**
- * 强智「考试安排」页的常见地址（主界面菜单里没挖到时兜底）。
+ * 强智「考试安排」页的地址。
  *
- * 新版一体化普遍是 `/xsks/xsksap_list`（查询条件 `xn` / `xq`），
- * 也有学校是 `xsksap_query` / `xsks_list`，都试一遍。
+ * 两个页面分工不同（海都学院用内置浏览器抓包确证）：
+ * - `xsksap_query`：**查询页**，有学期下拉 `xnxqid`，页面加载后自动 POST 到 list；
+ * - `xsksap_list`：**结果页**，必须带 `xnxqid` POST 才出数据，GET 只会返回「未查询到数据」。
  */
 internal val EXAM_PATHS = listOf(
     "/xsks/xsksap_list",
