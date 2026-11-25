@@ -289,4 +289,62 @@ class ExamInfoTest {
         assertTrue("要报表头格子", d.contains("考试课程"))
         assertFalse("不能只有 DOCTYPE", d.startsWith("<!DOCTYPE"))
     }
+
+    @Test
+    fun `haidu 13 column table with session column`() {
+        // 线上真实表头（13 格）：序号|校区|考试校区|考试场次|课程编号|课程名称|...
+        // 注意「考试时间」列可能是空的，日期时段塞在「考试场次」里
+        val html = """
+            <html><head><title>我的考试 - 考试安排查询</title></head><body>
+            <table>
+              <tr>
+                <td>序号</td><td>校区</td><td>考试校区</td><td>考试场次</td><td>课程编号</td>
+                <td>课程名称</td><td>考试日期</td><td>考试时间</td><td>考试地点</td>
+                <td>座位号</td><td>考试形式</td><td>监考教师</td><td>备注</td>
+              </tr>
+              <tr>
+                <td>1</td><td>青岛</td><td>青岛校区</td><td>2026-12-01 09:00~11:00 第1场</td>
+                <td>BA060003</td><td>大学英语III</td><td>2026-12-01</td><td></td>
+                <td>3#A220</td><td>12</td><td>闭卷</td><td>张三</td><td></td>
+              </tr>
+            </table>
+            </body></html>
+        """.trimIndent()
+
+        val exams = parseExamsHtml(html)
+        assertEquals(1, exams.size)
+        assertEquals("大学英语III", exams[0].courseName)
+        assertEquals("BA060003", exams[0].courseCode)
+        assertEquals(LocalDate.of(2026, 12, 1), exams[0].date)
+        assertEquals(9 * 60, exams[0].startMinute)
+        assertEquals(11 * 60, exams[0].endMinute)
+        assertEquals("3#A220", exams[0].location)
+        assertEquals("12", exams[0].seat)
+    }
+
+    @Test
+    fun `location falls back to campus when place is empty`() {
+        val html = """
+            <table>
+              <tr><td>序号</td><td>校区</td><td>考试校区</td><td>课程名称</td><td>考试日期</td></tr>
+              <tr><td>1</td><td>青岛</td><td>青岛校区</td><td>高等数学</td><td>2026-12-03</td></tr>
+            </table>
+        """.trimIndent()
+        val exams = parseExamsHtml(html)
+        assertEquals(1, exams.size)
+        assertTrue("地点为空时用校区兜底", exams[0].location!!.contains("青岛"))
+    }
+
+    @Test
+    fun `diagnostics list each row when table is tiny`() {
+        val html = """
+            <table>
+              <tr><td>序号</td><td>课程名称</td><td>考试时间</td></tr>
+              <tr><td>1</td><td>暂无数据</td><td></td></tr>
+            </table>
+        """.trimIndent()
+        val d = describeExamPage(html)
+        assertTrue("要打出数据行", d.contains("第2行"))
+        assertTrue("要报解析结果", d.contains("解析出="))
+    }
 }

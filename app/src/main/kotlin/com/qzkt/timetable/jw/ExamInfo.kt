@@ -210,7 +210,20 @@ internal fun describeExamPage(html: String): String {
         val firstCells = rows.firstOrNull()?.select("td, th")?.map { it.text().trim().take(8) }.orEmpty()
         parts += "表" + (index + 1) + "(" + rows.size + "行/首行" + firstCells.size + "格:" +
             firstCells.take(6).joinToString("|") + ")"
+
+        // 行数很少时把每一行的格子都打出来：解析不出来时，这条最有价值
+        // （能直接看出是「暂无数据」占位行，还是数据在但我们取错列）
+        if (rows.size <= 4) {
+            rows.drop(1).forEachIndexed { rowIndex, row ->
+                val cells = row.select("td, th").map { it.text().trim().take(14) }
+                parts += "第" + (rowIndex + 2) + "行(" + cells.size + "格:" +
+                    cells.take(8).joinToString("|") + ")"
+            }
+        }
     }
+    // 顺便报一下解析结果，区分「表里有数据但没认出列」和「表里本来就没有数据」
+    val parsed = runCatching { parseExamsHtml(html) }.getOrDefault(emptyList())
+    parts += "解析出=" + parsed.size + "条"
     if (tables.isEmpty()) {
         parts += "正文前80字=" + doc.text().replace(Regex("""\s+"""), " ").take(80)
     }
@@ -315,6 +328,9 @@ private fun parseExamTable(table: Element): List<ExamInfo> {
     val dateCol = headerIndex { it.contains("日期") && !it.contains("时间") }
         ?: col("考试日期", "日期")
     val timeCol = col("考试时间", "时间")
+    // 「考试场次」常把日期和时段一起塞进去（如 2026-12-01 09:00~11:00 第1场），
+    // 而「考试时间」列可能是空的，所以时间取不到时用它兜底。
+    val sessionCol = col("考试场次", "场次", "考试时段")
     val placeCol = col("考试地点", "考试教室", "考试场地", "考场", "地点", "教室")
     val seatCol = col("座位号", "座位")
     val formCol = col("考试形式", "考核方式", "考试方式", "形式", "方式")
@@ -333,7 +349,8 @@ private fun parseExamTable(table: Element): List<ExamInfo> {
         val timeText = listOfNotNull(
             dateCol?.takeIf { it != timeCol }?.let { cell(it) },
             cell(timeCol),
-        ).joinToString(" ")
+            cell(sessionCol),
+        ).distinct().joinToString(" ")
         val parsed = parseExamTime(timeText)
         ExamInfo(
             courseName = courseName,
@@ -342,7 +359,11 @@ private fun parseExamTable(table: Element): List<ExamInfo> {
             date = parsed.date,
             startMinute = parsed.startMinute,
             endMinute = parsed.endMinute,
-            location = cell(placeCol),
+            // 地点列可能是空的，退而用「校区 / 考试校区」，总比什么都不显示好
+            location = cell(placeCol)
+                ?: listOfNotNull(cell(col("考试校区")), cell(col("校区")))
+                    .joinToString(" ")
+                    .takeIf { it.isNotBlank() },
             seat = cell(seatCol),
             form = cell(formCol),
             note = cell(noteCol),
