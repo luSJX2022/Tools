@@ -154,7 +154,7 @@ internal fun extractExamTermOptions(html: String): List<String> {
  */
 internal fun isRateLimitedHtml(html: String): Boolean {
     if (html.isBlank()) return false
-    val squashed = html.replace(Regex("""s+"""), "")
+    val squashed = html.replace(Regex("""\s+"""), "")
     return squashed.contains("操作过于频繁") ||
         squashed.contains("已被注销登录") ||
         squashed.contains("请勿高频操作")
@@ -187,13 +187,105 @@ internal fun parseExamsHtml(html: String): List<ExamInfo> {
         val exams = runCatching { parseExamTable(table) }.getOrNull().orEmpty()
         if (exams.isNotEmpty()) return exams
     }
-    return emptyList()
+    // 最后兜底：有的强智把考试列表渲染成 div/li 而不是 table，全文扫一遍
+    return parseExamBlocks(doc)
 }
+
+/**
+ * 解析失败时的诊断摘要：告诉用户/开发者「页面长什么样、卡在哪一步」。
+ *
+ * 线上教训：只把前 400 字原样打出来时，看到的永远是 DOCTYPE 和 head，
+ * 真正有用的信息（有没有表格、表格几行几列、表头是什么）全被截掉了。
+ */
+internal fun describeExamPage(html: String): String {
+    if (html.isBlank()) return "页面为空"
+    val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return "HTML 解析失败"
+    val title = doc.title().trim().take(40)
+    val tables = doc.select("table")
+    val parts = mutableListOf<String>()
+    parts += "标题=" + title.ifEmpty { "(无)" }
+    parts += "表格数=" + tables.size
+    tables.take(3).forEachIndexed { index, table ->
+        val rows = table.select("tr")
+        val firstCells = rows.firstOrNull()?.select("td, th")?.map { it.text().trim().take(8) }.orEmpty()
+        parts += "表" + (index + 1) + "(" + rows.size + "行/首行" + firstCells.size + "格:" +
+            firstCells.take(6).joinToString("|") + ")"
+    }
+    if (tables.isEmpty()) {
+        parts += "正文前80字=" + doc.text().replace(Regex("""\s+"""), " ").take(80)
+    }
+    return parts.joinToString("；")
+}
+
+/**
+ * 文档级兜底解析：不依赖 table 结构，找「同一块里既有可解析的日期/时间、又有像课程名的文字」。
+ *
+ * 规则刻意从严（必须有年份日期或完整时间段），否则菜单、查询条件会被误当成考试。
+ */
+internal fun parseExamBlocks(doc: org.jsoup.nodes.Document): List<ExamInfo> {
+    val result = mutableListOf<ExamInfo>()
+    val seen = HashSet<String>()
+
+    // 候选块：tr / li / div 里文本量适中、且含日期或时间段
+    val candidates = doc.select("tr, li, div.NS_Table, div.list, div.row")
+    for (block in candidates) {
+        val text = block.text().trim()
+        if (text.length !in 8..400) continue
+        if (!DATE_PATTERN.containsMatchIn(text) && !TIME_RANGE_PATTERN.containsMatchIn(text)) continue
+        // 只取最内层：内部子块已经有候选就跳过，避免同一场考试被抓多次
+        if (block.select("tr, li").isNotEmpty()) continue
+
+        val parsed = parseExamTime(text)
+        val name = pickCourseName(text) ?: continue
+        val key = name + "|" + text
+        if (!seen.add(key)) continue
+        result += ExamInfo(
+            courseName = name,
+            timeText = text.take(120),
+            date = parsed.date,
+            startMinute = parsed.startMinute,
+            endMinute = parsed.endMinute,
+            location = pickLocation(text),
+        )
+    }
+    return result
+}
+
+/** 从一段文字里挑最像课程名的片段：去掉日期时间、地点、序号后的第一个较长中文串。 */
+private fun pickCourseName(text: String): String? {
+    val cleaned = text
+        .replace(DATE_PATTERN, " ")
+        .replace(TIME_RANGE_PATTERN, " ")
+        .replace(TIME_SINGLE_PATTERN, " ")
+    val pieces = cleaned.split(Regex("""[\s,，;；:：|]+"""))
+        .map { it.trim() }
+        .filter { it.length >= 2 }
+        .filter { !it.matches(SEQUENCE_NUMBER_PATTERN) }
+        .filter { !LOCATION_HINT_PATTERN.containsMatchIn(it) }
+        .filter { !looksLikeExamHeader(it) }
+    return pieces.firstOrNull()
+}
+
+/** 从一段文字里挑地点：带「楼/教室/考场/校区/#」的片段。 */
+private fun pickLocation(text: String): String? =
+    text.split(Regex("""[\s,，;；|]+"""))
+        .map { it.trim() }
+        .firstOrNull { it.length >= 2 && LOCATION_HINT_PATTERN.containsMatchIn(it) && !looksLikeExamHeader(it) }
 
 private fun parseExamTable(table: Element): List<ExamInfo> {
     // 表头可能占两行（合并单元格），取 th 最多的那一行
-    val headerRow = table.select("tr").maxByOrNull { it.select("th").size }
-    val headers = headerRow?.select("th")?.map { normalizeHeader(it.text()) }.orEmpty()
+    val thRow = table.select("tr").maxByOrNull { it.select("th").size }
+    var headers = thRow?.select("th")?.map { normalizeHeader(it.text()) }.orEmpty()
+
+    // 强智很多页面用 <td> 当表头（整行都是 td、没有 th），这时把「第一行」当表头试试，
+    // 只有它确实像表头（含课程/时间/地点之类的词）才采用，否则退回按行猜。
+    if (headers.isEmpty()) {
+        val firstRow = table.select("tr").firstOrNull()
+        val firstCells = firstRow?.select("td")?.map { normalizeHeader(it.text()) }.orEmpty()
+        if (firstCells.size >= 2 && firstCells.count { looksLikeExamHeader(it) } >= 2) {
+            headers = firstCells
+        }
+    }
     if (headers.isEmpty()) return parseLooseExamRows(table)
 
     fun headerIndex(predicate: (String) -> Boolean): Int? =
@@ -212,9 +304,11 @@ private fun parseExamTable(table: Element): List<ExamInfo> {
 
     val nameCol = headerIndex { header ->
         (header.contains("考试课程") || header.contains("课程名称") || header.contains("课程名") ||
-            header.contains("科目名称") || header == "科目" || header == "课程") &&
+            header.contains("科目名称") || header.contains("考试科目") || header.contains("考试名称") ||
+            header == "科目" || header == "课程") &&
             !header.contains("代码") && !header.contains("编号") && !header.contains("课程号")
-    } ?: return emptyList()
+    } ?: headerIndex { header -> header.contains("课程") && !header.contains("代码") }
+        ?: return emptyList()
 
     val codeCol = col("课程代码", "课程编号", "课程号", "代码", "编号")
     // 日期和时间可能是两列（「考试日期」+「考试时间」），也可能挤在一列里
@@ -229,6 +323,9 @@ private fun parseExamTable(table: Element): List<ExamInfo> {
     return table.select("tr").mapNotNull { row ->
         val cells = row.select("td")
         if (cells.size < 2) return@mapNotNull null
+        // 如果这一行就是被当成表头的那一行，跳过（否则会把「考试课程/考试时间」当数据）
+        if (row === thRow && headers.isNotEmpty()) return@mapNotNull null
+        if (cells.count { looksLikeExamHeader(normalizeHeader(it.text())) } >= 2) return@mapNotNull null
         fun cell(index: Int?): String? =
             index?.let { cells.getOrNull(it)?.text()?.trim() }?.takeIf { it.isNotBlank() }
 
@@ -305,3 +402,19 @@ private val LOCATION_HINT_PATTERN = Regex("(楼|教室|考场|校区|#|馆|室)"
 
 private fun normalizeHeader(text: String): String =
     text.replace(Regex("[\\s\\u00a0]+"), "")
+
+/**
+ * 这一格像不像考试表的表头。
+ *
+ * 强智的考试页经常整行用 td 当表头（没有 th），所以需要判断「第一行是不是表头」。
+ * 只认考试场景里真会出现的词，避免把普通数据行误当表头。
+ */
+internal fun looksLikeExamHeader(cell: String): Boolean {
+    val t = cell.replace(Regex("[\\s\\u00a0]+"), "")
+    if (t.isEmpty() || t.length > 12) return false
+    val hints = listOf(
+        "课程", "科目", "考试时间", "时间", "日期", "地点", "教室", "考场", "场地",
+        "座位", "形式", "方式", "备注", "序号", "考核", "学分", "班级",
+    )
+    return hints.any { t.contains(it) }
+}

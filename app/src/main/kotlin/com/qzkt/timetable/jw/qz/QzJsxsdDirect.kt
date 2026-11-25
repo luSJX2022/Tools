@@ -6,6 +6,7 @@ import com.qzkt.timetable.jw.GradeInfo
 import com.qzkt.timetable.data.PluginLog
 import com.qzkt.timetable.jw.extractExamTermOptions
 import com.qzkt.timetable.jw.isLoginPageHtml
+import com.qzkt.timetable.jw.describeExamPage
 import com.qzkt.timetable.jw.isRateLimitedHtml
 import com.qzkt.timetable.jw.parseExamsHtml
 import com.qzkt.timetable.jw.parseGradesHtml
@@ -203,6 +204,7 @@ internal class QzJsxsdDirect(
         // 所以这里只按最可能的路径查一次 GET（顺便拿学期选项）＋一次 POST。
         var requests = 0
         var rateLimited = false
+        var lastHtml = ""
 
         fun banned(html: String): Boolean {
             if (!isRateLimitedHtml(html)) return false
@@ -214,12 +216,12 @@ internal class QzJsxsdDirect(
 
         fun getOnce(url: String): String? {
             requests++
-            return runCatching { get(client, url, cookie) }.getOrNull()
+            return runCatching { get(client, url, cookie) }.getOrNull()?.also { lastHtml = it }
         }
 
         fun postOnce(url: String, form: Map<String, String>): String? {
             requests++
-            return runCatching { post(client, url, cookie, form) }.getOrNull()
+            return runCatching { post(client, url, cookie, form) }.getOrNull()?.also { lastHtml = it }
         }
 
         try {
@@ -257,7 +259,8 @@ internal class QzJsxsdDirect(
             PluginLog.w(
                 "教务",
                 "考试查询没出结果：地址 " + listUrl + "、学期 " + terms.take(3) + "、请求次数 " + requests +
-                    "、登录页=" + sawLoginPage + "、限流=" + rateLimited + "、最后页面=" + snippet.take(120),
+                    "、登录页=" + sawLoginPage + "、限流=" + rateLimited +
+                    "、页面结构=" + describeExamPage(lastHtml),
             )
             ExamsOutcome(
                 emptyList(),

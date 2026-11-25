@@ -222,4 +222,71 @@ class ExamInfoTest {
         assertFalse(isRateLimitedHtml("<table><tr><th>考试时间</th></tr></table>"))
         assertFalse(isRateLimitedHtml(""))
     }
+
+    @Test
+    fun `qiangzhi page uses td cells as the header row`() {
+        // 线上真实页面（我的考试 - 考试安排查询）：整行都用 td，没有 th
+        val html = """
+            <html><head><title>我的考试 - 考试安排查询</title></head><body>
+            <table class="Nsb_r_list Nsb_table">
+              <tr>
+                <td>序号</td><td>考试时间</td><td>考试地点</td><td>考试课程</td>
+                <td>座位号</td><td>考试形式</td>
+              </tr>
+              <tr>
+                <td>1</td><td>2026-12-01 星期一 09:00~11:00</td><td>3#A220</td>
+                <td>大学英语III</td><td>12</td><td>闭卷</td>
+              </tr>
+            </table>
+            </body></html>
+        """.trimIndent()
+
+        val exams = parseExamsHtml(html)
+        assertEquals(1, exams.size)
+        assertEquals("大学英语III", exams[0].courseName)
+        assertEquals("3#A220", exams[0].location)
+        assertEquals("12", exams[0].seat)
+        assertEquals(LocalDate.of(2026, 12, 1), exams[0].date)
+        assertEquals(9 * 60, exams[0].startMinute)
+        // 表头行不能被当成一条考试
+        assertTrue(exams.none { it.courseName.contains("考试课程") })
+    }
+
+    @Test
+    fun `header row detection`() {
+        assertTrue(looksLikeExamHeader("考试课程"))
+        assertTrue(looksLikeExamHeader("考试时间"))
+        assertTrue(looksLikeExamHeader("座位号"))
+        assertFalse(looksLikeExamHeader("大学英语III"))
+        assertFalse(looksLikeExamHeader("2026-12-01 星期一 09:00~11:00"))
+    }
+
+    @Test
+    fun `div based exam list still parses`() {
+        // 不是 table，而是 div 列表（部分强智模板）
+        val html = """
+            <html><body><div class='list'>
+              <div>2026-12-05 14:00~16:00 数据结构 3#B101 座位 8</div>
+            </div></body></html>
+        """.trimIndent()
+        val exams = parseExamsHtml(html)
+        assertEquals(1, exams.size)
+        assertEquals("数据结构", exams[0].courseName)
+        assertEquals(LocalDate.of(2026, 12, 5), exams[0].date)
+        assertEquals(14 * 60, exams[0].startMinute)
+    }
+
+    @Test
+    fun `diagnostics describe structure not just doctype`() {
+        val html = """
+            <!DOCTYPE html><html><head><title>我的考试 - 考试安排查询</title></head><body>
+            <table><tr><td>序号</td><td>考试时间</td><td>考试课程</td></tr></table>
+            </body></html>
+        """.trimIndent()
+        val d = describeExamPage(html)
+        assertTrue("要带标题", d.contains("我的考试"))
+        assertTrue("要报表格数", d.contains("表格数=1"))
+        assertTrue("要报表头格子", d.contains("考试课程"))
+        assertFalse("不能只有 DOCTYPE", d.startsWith("<!DOCTYPE"))
+    }
 }
