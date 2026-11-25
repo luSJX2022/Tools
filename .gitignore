@@ -27,3 +27,5 @@ build-alt/
 dist/
 .gradle-old-*/
 app/stableIds.txt
+docs/session-handoff.md
+stableIds.txt
